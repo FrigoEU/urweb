@@ -973,7 +973,8 @@ con formTag = fn (ty :: Type) (inner :: {Unit}) (attrs :: {Type}) =>
                         -> tag attrs ([Form] ++ ctx) inner [] [nm = ty]
 
 con inputAttrs' = [Required = bool, Autofocus = bool,
-                   Onchange = transaction unit]
+                   Onchange = transaction unit, Disabled = bool,
+                   Autocomplete = string]
 con inputAttrs = inputAttrs' ++ [Oninput = transaction unit]
 
 val hidden : formTag string [] [Data = data_attr, Id = string, Value = string]
@@ -995,7 +996,7 @@ val color : textWidget
 
 val number : formTag float [] ([Value = float, Min = float, Max = float, Step = float, Size = int] ++ boxAttrs ++ inputAttrs)
 val range : formTag float [] ([Value = float, Min = float, Max = float, Size = int] ++ boxAttrs ++ inputAttrs)
-val date : formTag string [] ([Value = string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs)
+val date : formTag string [] ([Value = string, Min = string, Max = string, Size = int, Placeholder = string] ++ boxAttrs ++ inputAttrs)
 val datetime : formTag string [] ([Value = string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs)
 val datetime_local : formTag string [] ([Value = string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs)
 val month : formTag string [] ([Value = string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs)
@@ -1009,7 +1010,7 @@ val fileName : file -> option string
 val fileMimeType : file -> string
 val fileData : file -> blob
 
-val upload : formTag file [] ([Value = string, Size = int] ++ boxAttrs)
+val upload : formTag file [] ([Value = string, Size = int, Accept = string] ++ boxAttrs)
 
 type mimeType
 val blessMime : string -> mimeType
@@ -1075,7 +1076,7 @@ val ccolor : ctext
 
 val cnumber : cformTag ([Source = source (option float), Min = float, Max = float, Step = float, Size = int] ++ boxAttrs ++ inputAttrs) []
 val crange : cformTag ([Source = source (option float), Min = float, Max = float, Size = int, Step = float] ++ boxAttrs ++ inputAttrs) []
-val cdate : cformTag ([Source = source string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs) []
+val cdate : cformTag ([Source = source string, Min = string, Max = string, Size = int, Placeholder = string] ++ boxAttrs ++ inputAttrs) []
 val cdatetime : cformTag ([Source = source string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs) []
 val cdatetime_local : cformTag ([Source = source string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs) []
 val cmonth : cformTag ([Source = source string, Min = string, Max = string, Size = int] ++ boxAttrs ++ inputAttrs) []
