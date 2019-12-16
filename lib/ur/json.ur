@@ -402,7 +402,7 @@ fun json_record_withOptional [ts ::: {Type}] [ots ::: {Type}] [ts ~ ots]
                                end
                    in
                        if String.length s = 0 || String.sub s 0 <> #"{" then
-                           error <xml>JSON record doesn't begin with brace</xml>
+                           error <xml>JSON record doesn't begin with brace: {[s]}</xml>
                        else
                            let
                                val (r, s') = fromJ (skipSpaces (String.substring s {Start = 1, Len = String.length s - 1}))
