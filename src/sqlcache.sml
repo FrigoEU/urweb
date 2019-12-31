@@ -1726,7 +1726,7 @@ fun go file =
         val () = Sql.sqlcacheMode := false
         val file = insertAfterDatatypes (file, rev fmDecls)
     in
-        MonoReduce.reduce file
+        MonoReduce.reduce file false
     end
 
 end

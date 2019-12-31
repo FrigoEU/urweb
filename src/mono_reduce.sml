@@ -49,7 +49,23 @@ structure SLS = BinarySetFn(struct
                              val compare = Order.joinL String.compare
                              end)
 
-
+val cachedVals = ref ([]: ({ name: string
+                           , fullname: string
+                           , seqNum: int
+                           , typ: typ
+                           , orig: exp
+                           , optim: exp
+                           } list))
+val cachedValRecs = ref ([]: (({ name: string
+                               , fullname: string
+                               , seqNum: int
+                               , typ: typ
+                               , orig: exp
+                               , optim: exp
+                               } list) list))
+val cachedDatatypes = ref ([]: (({ name: string
+                                 , seqNum: int
+                                 , constructors: (string * int * typ option) list} list ) list))
 
 fun simpleTypeImpure tsyms =
     U.Typ.exists (fn TFun _ => true
@@ -908,16 +924,586 @@ fun reduce' (file : file) =
         U.File.mapB {typ = typ, exp = exp, decl = decl, bind = bind} E.empty file
     end
 
-fun reduce file =
+fun doReduce file =
     let
         val () = yankedCase := false
         val file' = reduce' file
     in
         if !yankedCase then
-            reduce file'
+            doReduce file'
         else
             file'
     end
 
+val printDebug = false
+fun trace (phase: string) (b: bool): bool =
+    if b orelse not printDebug
+    then true
+    else (TextIO.print ("Not equal: " ^ phase ^ "\n"); false)
 
+fun existsInMap (m: IS.set IM.map, i: int, j: int): bool =
+    case IM.find (m, i) of
+        NONE => false
+      | SOME set => IS.member (set, j)
+
+fun findFirstInMap (m: IS.set IM.map, i: int): int option = 
+    case IM.find (m, i) of
+        NONE => NONE
+      | SOME set => IS.find (fn _ => true) set
+
+fun pushIntoMap (m: IS.set IM.map, i: int, j: int): IS.set IM.map = 
+    case IM.find (m, i) of
+        NONE => IM.insert (m, i, IS.singleton j)
+      | SOME set => IM.insert (m, i, IS.add (set, j))
+
+fun unionMaps (m1: IS.set IM.map, m2: IS.set IM.map): IS.set IM.map = 
+    IM.unionWith IS.union (m1, m2)
+
+fun debugMap (m1: IS.set IM.map): unit =
+    if printDebug
+    then 
+        List.app
+            (fn (i, set) =>
+                ( TextIO.print (Int.toString i ^ " - " )
+                ; List.app (fn j => TextIO.print (Int.toString j ^ " ")) (IS.listItems set)
+                ; TextIO.print "."))
+            (IM.listItemsi m1)
+    else ()
+        
+fun compareType (datatypeMapping: IS.set IM.map) (old: typ) (new: typ): bool =  
+    let
+        val recurse = compareType datatypeMapping
+    in
+    case (#1 old, #1 new) of
+        (TFun (oldT1, oldT2), TFun (newT1, newT2)) => recurse oldT1 newT1 andalso recurse oldT2 newT2
+      | (TRecord oldFields, TRecord newFields) =>
+        ListPair.allEq
+            (fn (oldF, newF) => #1 oldF = #1 newF andalso recurse (#2 oldF) (#2 newF))
+            (oldFields, newFields)
+      | (TDatatype (oldI, _), TDatatype (newI, _)) =>
+        trace
+            ("TDatatype: " ^ Int.toString oldI ^ " - " ^ Int.toString newI)
+            (existsInMap (datatypeMapping, oldI, newI))
+      | (TFfi (oldStr1, oldStr2), TFfi (newStr1, newStr2)) =>
+        oldStr1 = newStr1 andalso oldStr2 = newStr2
+      | (TOption oldT, TOption newT) => recurse oldT newT
+      | (TList oldT, TList newT) => recurse oldT newT
+      | (TSource, TSource) => true
+      | (TSignal oldT, TSignal newT) => recurse oldT newT
+      | _ => false
+    end
+
+fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (old: exp) (new: exp): bool =
+    let
+        val recurse = compareCachedVal namedMapping datatypeMapping
+        val recurseList = compareCachedValList namedMapping datatypeMapping
+    in
+        case (#1 old, #1 new) of
+            (EPrim old, EPrim new) => Prim.equal (old, new)
+          | (ERel oldN, ERel newN) =>
+            (* We're only caching top-level decl's, so Rel's will always have the same sequence numbers across runs. *)
+            (* We're also comparing the function bodies, so if Rel's have the same seq number they are the same variable in the same function *)
+            trace
+                ("Rel: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+                (oldN = newN)
+          | (ENamed oldN, ENamed newN) =>
+            (* Check if referenced named bindings are the same *)
+            trace
+                ("Named: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+                (existsInMap (namedMapping, oldN, newN))
+          | (ECon (_, PConVar oldN, oldEo), ECon (_, PConVar newN, newEo)) =>
+            (* Check if referenced datatype constructors are the same *)
+            trace
+                ("Con with PConVar: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+                (existsInMap (namedMapping, oldN, newN)
+                 andalso
+                 (* Check if expressions inside are the same *)
+                 (case (oldEo, newEo) of
+                      (SOME oldE', SOME newE') =>
+                      recurse oldE' newE'
+                    | (NONE, NONE) => true
+                    | _ => false))
+          | (ECon (_, PConFfi oldFfi, oldEo), ECon (_, PConFfi newFfi, newEo)) =>
+            (* Check if referenced FFI constructor names are the same *)
+            trace
+                ("Con with PConFfi: "
+                 ^ #mod oldFfi ^ "/" ^ #datatyp oldFfi ^ "." ^ #con oldFfi ^ " - "
+                 ^ #mod newFfi ^ "/" ^ #datatyp newFfi ^ "." ^ #con newFfi)
+                (#mod oldFfi = #mod newFfi
+                 andalso #datatyp oldFfi = #datatyp newFfi
+                 andalso #con oldFfi = #con newFfi
+                 andalso
+                 (* Check if expressions inside are the same *)
+                 (case (oldEo, newEo) of
+                      (SOME oldE', SOME newE') =>
+                      recurse oldE' newE'
+                    | (NONE, NONE) => true
+                    | _ => false
+                ))
+          | (ENone oldT, ENone newT) => compareType datatypeMapping oldT newT
+          | (ESome (oldT, oldE), ESome (newT, newE)) =>
+            compareType datatypeMapping oldT newT
+            andalso
+            recurse oldE newE
+          | (EFfi (oldS1, oldS2), EFfi (newS1, newS2)) =>
+            oldS1 = newS1 andalso oldS2 = newS2
+          | (EFfiApp (oldS1, oldS2, oldExps), EFfiApp (newS1, newS2, newExps)) =>
+            (* Check if FFI references are the same and all arguments are *)
+            oldS1 = newS1
+            andalso oldS2 = newS2
+            andalso ListPair.allEq (fn (oldT, newT) => compareType datatypeMapping oldT newT) (List.map #2 oldExps, List.map #2 newExps)
+            andalso recurseList (List.map #1 oldExps) (List.map #1 newExps)
+          | (EApp (oldE1, oldE2), EApp (newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (EAbs (oldStr, oldT1, oldT2, oldE), EAbs (newStr, newT1, newT2, newE)) =>
+            oldStr = newStr
+            andalso compareType datatypeMapping oldT1 newT1
+            andalso compareType datatypeMapping oldT2 newT2
+            andalso recurse oldE newE
+          | (EUnop (oldStr, oldE), EUnop (newStr, newE)) =>
+            oldStr = newStr
+            andalso recurse oldE newE
+          | (EBinop (_, oldStr, oldE1, oldE2), EBinop (_, newStr, newE1, newE2)) =>
+            oldStr = newStr
+            andalso recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (ERecord oldFields, ERecord newFields) =>
+            (* First we compare record field labels, then value expressions inside *)
+            List.map #1 oldFields = List.map #1 newFields
+            andalso ListPair.allEq (fn (oldT, newT) => compareType datatypeMapping oldT newT) (List.map #3 oldFields, List.map #3 newFields)
+            andalso recurseList (List.map #2 oldFields) (List.map #2 newFields)
+          | (EField (oldE, oldStr), EField (newE, newStr)) =>
+            oldStr = newStr
+            andalso recurse oldE newE
+          | (ECase (oldE, oldPatterns, {disc = oldT1, result = oldT2}), ECase (newE, newPatterns, {disc = newT1, result = newT2})) =>
+            let
+                val res1 = recurse oldE newE
+                val res2 = let
+                    (* Check if all patterns are the same *)
+                    fun comparePattern (oldP: pat) (newP: pat): bool = 
+                        case (#1 oldP, #1 newP) of
+                            (PVar (oldName, oldT), PVar (newName, newT)) =>
+                            compareType datatypeMapping oldT newT
+                          | (PPrim oldP, PPrim newP) =>
+                            Prim.equal (oldP, newP)
+                          | (PCon (_, _, NONE), PCon (_, _, NONE)) => true
+                          | (PCon (_, oldPatCon, SOME oldPo), PCon (_, newPatCon, SOME newPo)) =>
+                            (case (oldPatCon, newPatCon) of
+                                 (PConVar oldN, PConVar newN) =>
+                                 existsInMap (namedMapping, oldN, newN)
+                               | (PConFfi oldFfi, PConFfi newFfi) => 
+                                 #mod oldFfi = #mod newFfi
+                                 andalso #datatyp oldFfi = #datatyp newFfi
+                                 andalso #con oldFfi = #con newFfi
+                               | _ => false)
+                            andalso comparePattern oldPo newPo
+                          | (PRecord oldPs, PRecord newPs) =>
+                            ListPair.allEq
+                                (fn (oldP, newP) =>
+                                    #1 oldP = #1 newP
+                                    andalso compareType datatypeMapping (#3 oldP) (#3 newP)
+                                    andalso comparePattern (#2 oldP) (#2 newP))
+                                (oldPs, newPs)                            
+                          | (PNone oldT, PNone newT) => compareType datatypeMapping oldT newT
+                          | (PSome (oldT, oldP'), PSome (newT, newP')) =>
+                            compareType datatypeMapping oldT newT
+                            andalso comparePattern oldP' newP'
+                          | _ => false
+                in
+                    ListPair.allEq
+                        (fn ((oldP, oldE), (newP, newE)) =>
+                            comparePattern oldP newP
+                            andalso recurse oldE newE
+                        )
+                        (oldPatterns, newPatterns)
+                end
+                val res3 = compareType datatypeMapping oldT1 newT1
+                val res4 = compareType datatypeMapping oldT2 newT2
+            in
+                res1 andalso res2 andalso res3 andalso res4
+            end
+          | (EStrcat (oldE1, oldE2), EStrcat (newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (EError (oldE, oldT), EError (newE, newT)) =>
+            compareType datatypeMapping oldT newT
+            andalso
+            recurse oldE newE
+          | (EReturnBlob {blob = NONE, mimeType = oldME, t = oldT}, EReturnBlob {blob = NONE, mimeType = newME, t = newT}) =>
+            compareType datatypeMapping oldT newT
+            andalso
+            recurse oldME newME
+          | (EReturnBlob {blob = SOME oldBE, mimeType = oldME, ...}, EReturnBlob {blob = SOME newBE, mimeType = newME, ...}) =>
+            recurse oldME newME
+            andalso recurse oldBE newBE
+          | (ERedirect (oldE, oldT), ERedirect (newE, newT)) => 
+            compareType datatypeMapping oldT newT
+            andalso recurse oldE newE
+          | (EWrite oldE, EWrite newE) =>
+            recurse oldE newE
+          | (ESeq (oldE1, oldE2), ESeq (newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (ELet (oldName, oldT, oldE1, oldE2), ELet (newName, newT, newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso compareType datatypeMapping oldT newT
+            andalso recurse oldE2 newE2
+          | (EClosure (_, oldExps), EClosure (_, newExps)) =>
+            recurseList oldExps newExps
+          | (EQuery {query = oldQuery, body = oldBody, initial = oldInitial, ...}, EQuery {query = newQuery, body = newBody, initial = newInitial, ...}) =>
+            recurse oldQuery newQuery
+            andalso recurse oldBody newBody
+            andalso recurse oldInitial newInitial
+          | (EDml (oldE, oldFm), EDml (newE, newFm)) =>
+            oldFm = newFm
+            andalso recurse oldE newE
+          | (ENextval oldE, ENextval newE) => 
+            recurse oldE newE
+          | (ESetval (oldE1, oldE2), ESetval (newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (EUnurlify (oldE, oldT, oldB), EUnurlify (newE, newT, newB)) =>
+            oldB = newB
+            andalso compareType datatypeMapping oldT newT
+            andalso recurse oldE newE
+          | (EJavaScript (oldJm, oldE), EJavaScript (newJm, newE)) =>
+            (case (oldJm, newJm) of
+                 (Attribute, Attribute) => true
+               | (Script, Script) => true
+               | (Source t1, Source t2) => compareType datatypeMapping t1 t2
+               | _ => false)
+            andalso recurse oldE newE
+          | (ESignalReturn oldE, ESignalReturn newE) =>
+            recurse oldE newE
+          | (ESignalBind (oldE1, oldE2), ESignalBind (newE1, newE2)) =>
+            recurse oldE1 newE1
+            andalso recurse oldE2 newE2
+          | (ESignalSource oldE, ESignalSource newE) =>
+            recurse oldE newE
+          | (EServerCall (oldE, oldT, _, oldFm), EServerCall (newE, newT, _, newFm)) =>
+            oldFm = newFm
+            andalso compareType datatypeMapping oldT newT
+            andalso recurse oldE newE
+          | (ERecv (oldE, oldT), ERecv (newE, newT)) =>
+            compareType datatypeMapping oldT newT
+            andalso recurse oldE newE
+          | (ESleep oldE, ESleep newE) =>
+            recurse oldE newE
+          | (ESpawn oldE, ESpawn newE) =>
+            recurse oldE newE
+          | _ => false
+    end
+
+and compareCachedValList namedMapping datatypeMapping (oldExps: exp list) (newExps: exp list) : bool =
+    ListPair.allEq
+        (fn (oldE, newE) => compareCachedVal namedMapping datatypeMapping oldE newE)
+        (oldExps, newExps)
+
+fun updateTyp (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (t: typ): typ = 
+    (case #1 t of
+         TDatatype (j, r) =>
+         let
+             val newJ = 
+                 case findFirstInMap (datatypeMapping, j) of
+                     NONE =>
+                     (* We don't throw here since we could be in a ref: *)
+                     (* this might already be updated so there's no problem *)
+                     (* If we do have a bug we'll throw during C compilation *)
+                     j
+                   | SOME newJ => newJ
+             val oldDtKind = #1 (!r)
+             val oldConstrs = #2 (!r)
+             val newConstrs = List.map (fn (str, j, to) => (str
+                                                           , case findFirstInMap (namedMapping, j) of
+                                                                 (* We don't throw here, see above *)
+                                                                 NONE => j
+                                                               | SOME newJ => newJ
+                                                           , Option.map (* MonoUtil doesn't descend here since we're in a ref so doing it explicitely *)
+                                                                 (U.Typ.map (fn t' => #1 (updateTyp namedMapping datatypeMapping (t', ErrorMsg.dummySpan))))
+                                                                 to
+                                       ))
+                                       oldConstrs
+         in
+             ( r := (oldDtKind, newConstrs)
+             ; TDatatype (newJ, r))
+         end
+       | t' => t'
+    , #2 t)
+
+fun updatePat (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (pat: pat): pat =
+    (case #1 pat of
+        PCon (dtk, PConVar j, po) =>
+        let
+            val newJ = case findFirstInMap (namedMapping, j) of
+                           NONE => raise Fail ("Datatype: No mapping found for " ^ Int.toString j)
+                         | SOME newJ => newJ
+        in
+            PCon (dtk, PConVar newJ, Option.map (updatePat namedMapping datatypeMapping) po)
+        end
+        | PRecord fields => PRecord (List.map (fn (str, pat, typ) => (str, updatePat namedMapping datatypeMapping pat, typ)) fields)
+        | PSome (t, pat) => PSome (t, updatePat namedMapping datatypeMapping pat)
+        | p => p
+    , #2 pat)
+
+fun updateExp (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (e: exp): exp =
+    (case #1 e of
+        ENamed j => (case findFirstInMap (namedMapping, j) of
+                         NONE => raise Fail ("No mapping found for " ^ Int.toString j)
+                       | SOME newJ => ENamed newJ)
+      | ECon (dt, PConVar j, eo) =>
+        let
+            val newJ = case findFirstInMap (namedMapping, j) of
+                           NONE => raise Fail ("No mapping found for " ^ Int.toString j)
+                         | SOME newJ => newJ
+        in
+            ECon (dt, PConVar newJ, eo)
+        end
+      | ECase (e, pats, t) =>
+        let
+            val newpats = List.map (fn (p, e) => (updatePat namedMapping datatypeMapping p , e)) pats
+        in
+            ECase (e, newpats, t)
+        end
+      | e => e, #2 e)
+    
+fun updateCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (e: exp): exp =
+    U.Exp.map
+        { typ = fn t => #1 (updateTyp namedMapping datatypeMapping (t, ErrorMsg.dummySpan))
+        , exp = fn e => #1 (updateExp namedMapping datatypeMapping (e, ErrorMsg.dummySpan))
+        }
+        e
+
+fun printnames (f: file) =
+    ( List.app (fn (d, _) => case d of DVal v => TextIO.print (#1 v ^ " #" ^ Int.toString (#2 v) ^ " " ^ (#5 v) ^"\n")
+                                     | DValRec vals => List.app (fn v => TextIO.print (#1 v ^ " #" ^ Int.toString (#2 v) ^ " " ^ (#5 v) ^"\n")) vals
+                                     | _ => ()) (#1 f)
+    ; TextIO.print "\n")
+
+fun debug (s: string) (value: 'a): 'a =
+    if printDebug
+    then (TextIO.print s; value)
+    else value
+
+fun debugP (preface: string) (p: Print.PD.pp_desc) (value: 'a): 'a =
+    if printDebug
+    then (Print.preface (preface, p); TextIO.flushOut TextIO.stdOut; value)
+    else value
+
+fun reduce (file: file) (optim: bool) =
+    let
+        (* val () = if not optim then () else printnames file *)
+        (* val () = if not optim then () else Print.preface ("full file: ", (MonoPrint.p_file E.empty file)) *)
+        val prevVals = !cachedVals
+        val prevValRecs = !cachedValRecs
+        val prevDatatypes = !cachedDatatypes
+        val compareTimer = Timer.startCPUTimer ()
+        val (newDecls, _, _) =
+            if not optim
+            then (List.rev (#1 file), IM.empty, IM.empty)
+            else
+            (* Walking over all decls in file:
+             * * If Vals or ValRecs are the same as previously, and their deps are, use the optimized version instead
+             * * Save mappings between sequence numbers (for Named bindings and datatype bindings) if they're the same, these are used in the comparisons
+             *)
+            List.foldl
+                (fn (decl, (decls: decl list, namedMapping: IS.set IM.map, datatypeMapping: IS.set IM.map)) =>
+                    case #1 decl of
+                        DVal (name, i, t, e, fullname) =>
+                        let
+                            val () = debug ("DVal " ^ Int.toString i ^ " " ^ name ^ ". ") ()
+                            (* val () = Print.preface ((name ^" :: "), (MonoPrint.p_typ E.empty t)) *)
+                            (* val () = TextIO.flushOut TextIO.stdOut *)
+                            val foundByName = List.filter (fn v => #name v = name andalso #fullname v = fullname) prevVals (* names are not always unique, sometimes blank (?) => filter *)
+                            val foundByComparison = List.filter (fn v => compareCachedVal namedMapping datatypeMapping (#orig v) e
+                                                                         andalso compareType datatypeMapping (#typ v) t)
+                                                                foundByName
+                        in
+                            case foundByComparison of
+                                [] => (debug ("  No hit.\n") (decl :: decls, namedMapping, datatypeMapping))
+                              | cacheds => 
+                                let
+                                    val newmapping = List.foldl (fn (cached, acc) => pushIntoMap (acc, #seqNum cached, i)) IM.empty cacheds
+                                    val () = debug "\n  Hit. Mapping: " ()
+                                    val () = debugMap newmapping
+                                    val () = debug "\n" ()
+                                in
+                                    ( (DVal (name, i, t, updateCachedVal namedMapping datatypeMapping (#optim (List.hd cacheds)), fullname), #2 decl) :: decls
+                                    , unionMaps (newmapping, namedMapping)
+                                    , datatypeMapping)
+                                end
+                        end
+                     | DValRec vals => 
+                       let
+                           val () = debug "DValRec " ()
+                           val () = List.app (fn v => debug ("#" ^ Int.toString (#2 v) ^ " " ^ #5 v ^ " ") ()) vals
+                           (* val () = List.app (fn v => debugP "" (MonoPrint.p_typ E.empty (#3 v)) ()) vals *)
+                           val foundByName = List.filter (fn prev => List.map #name prev = List.map #1 vals andalso
+                                                                     List.map #fullname prev = List.map #5 vals) prevValRecs
+                           (* We sometimes have 100% duplicates so we use filter instead of find *)
+                           val foundByComparison =
+                               List.filter (fn prev =>
+                                               let
+                                                   val extraMapping = ListPair.foldl (fn (new, cached, acc) => pushIntoMap (acc, #seqNum cached, #2 new)) IM.empty (vals, prev)
+                                               in
+                                                   ListPair.allEq (fn (new, cached) => compareCachedVal
+                                                                                           (unionMaps (extraMapping, namedMapping))
+                                                                                           datatypeMapping (#orig cached) (#4 new)
+                                                                                       andalso compareType datatypeMapping (#typ cached) (#3 new))
+                                                                  (vals, prev)
+                                               end
+                                           )
+                                           foundByName
+                       in
+                           case foundByComparison of
+                               [] => debug
+                                         "  No hit.\n"
+                                         (decl :: decls, namedMapping, datatypeMapping)
+                             | cacheds => 
+                               let
+                                   val extraMapping =
+                                       List.foldl
+                                           (fn (cached, acc) =>
+                                               ListPair.foldl (fn (new, cached', acc) => pushIntoMap (acc, #seqNum cached', #2 new)) acc (vals, cached))
+                                           IM.empty
+                                           cacheds
+                                   val () = debug "\n  Hit. " ()
+                                   val () = debug "RecVal mapping: " ()
+                                   val () = debugMap extraMapping
+                                   val () = debug "\n" ()
+                               in
+                                   ( ( DValRec (ListPair.map (fn ((x, i, t, _, n), cached) =>
+                                                                 (x, i, t, updateCachedVal
+                                                                               (unionMaps (extraMapping, namedMapping))
+                                                                               datatypeMapping
+                                                                               (#optim cached), n)) (vals, List.hd cacheds))
+                                     , #2 decl )
+                                     :: decls
+                                   , unionMaps (extraMapping, namedMapping)
+                                   , datatypeMapping
+                                   )
+                               end
+                       end
+                     | DDatatype (ds as (_ :: _)) =>
+                       let 
+                           val () = debug ("DDatatype: ") ()
+                           val () = List.app (fn d => ( TextIO.print (#1 d ^ " #" ^ Int.toString (#2 d) ^ " ")
+                                                      (* ; List.app (fn c => *)
+                                                      (*                ( Print.preface ( #1 c ^ " :: " *)
+                                                      (*                                , case #3 c of *)
+                                                      (*                                      NONE => Print.PD.string "NONE" *)
+                                                      (*                                    | SOME t => MonoPrint.p_typ E.empty t) *)
+                                                      (*                ; TextIO.flushOut TextIO.stdOut) *)
+                                                      (*            ) *)
+                                                      (*            (#3 d) *)
+                                                      )
+                                             ) ds
+                           val (namedMapping', datatypeMapping') =
+                               let
+                                   val foundByName = List.filter (fn prevds => List.map #name prevds = List.map #1 ds) prevDatatypes
+                                   val foundByComparison =
+                                       List.filter (fn saved =>
+                                                       let
+                                                           val ownMapping = ListPair.foldl
+                                                                                (fn (oldD, newD, acc) => pushIntoMap (acc, #seqNum oldD, #2 newD))
+                                                                                IM.empty
+                                                                                (saved, ds)
+                                                       in
+                                                           ListPair.allEq
+                                                               (fn (oldD, newD) =>
+                                                                   ListPair.allEq (fn (oldC, newC) =>
+                                                                                      #1 oldC = #1 newC
+                                                                                      andalso (case (#3 oldC, #3 newC) of
+                                                                                                   (NONE, NONE) => true
+                                                                                                 | (SOME t1, SOME t2) =>
+                                                                                                   compareType (unionMaps (ownMapping, datatypeMapping)) t1 t2
+                                                                                                 | _ => false))
+                                                                                  (#constructors oldD, #3 newD))
+                                                               (saved, ds)
+                                                       end
+                                                   )
+                                                   foundByName
+                               in
+                                   case foundByComparison of
+                                       [] => debug ("Nothing found for datatype\n") (IM.empty, IM.empty)
+                                     | saveds =>
+                                       let
+                                           val constrMapping =
+                                               List.foldl
+                                                   (fn (saved, acc) =>
+                                                       ListPair.foldl
+                                                           (fn (oldD, newD, acc) =>
+                                                               ListPair.foldl
+                                                                   (fn (oldC, newC, acc) => pushIntoMap (acc, #2 oldC, #2 newC))
+                                                                   acc
+                                                                   (#constructors oldD, #3 newD))
+                                                           acc
+                                                           (saved, ds))
+                                                   IM.empty
+                                                   saveds
+                                           val ownMapping =
+                                               List.foldl
+                                                   (fn (saved, acc) =>
+                                                       ListPair.foldl
+                                                           (fn (oldD, newD, acc) => pushIntoMap(acc,#seqNum oldD, #2 newD))
+                                                           acc
+                                                           (saved, ds))
+                                                   IM.empty
+                                                   saveds
+                                           val () = debug "\n  Mapping: " ()
+                                           val () = debugMap ownMapping
+                                           val () = debug " | | | " ()
+                                           val () = debug "Constructors mapping: " ()
+                                           val () = debugMap constrMapping
+                                           val () = debug "\n" ()
+                                       in
+                                           ( constrMapping , ownMapping)
+                                       end
+                               end
+                       in
+                           (decl :: decls, unionMaps (namedMapping, namedMapping'), unionMaps (datatypeMapping, datatypeMapping'))
+                       end
+                     | _ => (decl :: decls, namedMapping, datatypeMapping)
+                )
+                ([], IM.empty, IM.empty)
+                (#1 file)
+        val file' = (List.rev newDecls, #2 file)
+        val compareTime = Time.toMilliseconds (#usr (Timer.checkCPUTimer compareTimer))
+        val () = if not optim then () else debug ("Comparetime: " ^ LargeInt.toString compareTime ^ "ms\n") ()
+        val reduceTimer = Timer.startCPUTimer ()
+        val res = doReduce file'
+        val reduceTime = Time.toMilliseconds (#usr (Timer.checkCPUTimer reduceTimer))
+        val () = if not optim then () else debug ("Reducetime: " ^ LargeInt.toString reduceTime ^ "ms\n") ()
+        (* val () = List.app (fn d => Print.preface ("", (MonoPrint.p_decl E.empty d))) (#1 res) *)
+        (* val () = TextIO.flushOut TextIO.stdOut *)
+        (* val () = if not optim then () else printnames res *)
+        val () = if not optim
+                 then ()
+                 else
+                     let 
+                         val (vals, valRecs, datatypes) =
+                             (* Save optimized versions of vals and valrecs, and save datatypes aswell so we can map the sequence numbers next iteration *)
+                             ListPair.foldl (fn ((d1, _), (d2, _), (accvals, accrecvals, accdatatypes)) =>
+                                                case (d1, d2) of
+                                                    (DVal (name, i, t, orig, fullname), DVal (_, _, _, optim, _)) =>
+                                                    ({name = name, fullname = fullname, seqNum = i, orig = orig, optim = optim, typ = t} :: accvals, accrecvals, accdatatypes)
+                                                  | (DValRec origVals, DValRec optimVals) =>
+                                                    ( accvals
+                                                    , (ListPair.map (fn ((name, i, t, orig, fullname), (_, j, _, optim, _)) =>
+                                                                        {name = name, fullname = fullname, seqNum = i, orig = orig, optim = optim, typ = t})
+                                                                    (origVals, optimVals)) :: accrecvals
+                                                    , accdatatypes)
+                                                  | (DDatatype ds, _) => 
+                                                    (accvals, accrecvals, (List.map (fn (name, i, cons) => {name = name, seqNum = i, constructors = cons}) ds) :: accdatatypes)
+                                                  | _ => (accvals, accrecvals, accdatatypes)
+                                            ) ([], [], []) (#1 file, #1 res)
+                         val () = cachedVals := vals
+                         val () = cachedValRecs := valRecs
+                         val () = cachedDatatypes := datatypes
+                     in 
+                         ()
+                     end
+    in
+        res
+    end
 end

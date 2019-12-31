@@ -108,7 +108,7 @@ fun pvar (r, r', loc) =
                                                SM.insert (fs', x, n))) ([], SM.empty) (r, fs)
         in
             pvars := RM.insert (!pvars, r', (n, fs));
-            pvarDefs := ("$poly" ^ Int.toString n, n, map (fn (x, n, t) => (x, n, SOME t)) fs)
+            pvarDefs := ("$poly", n, map (fn (x, n, t) => (x, n, SOME t)) fs)
                         :: !pvarDefs;
             pvarOldDefs := (n, r) :: !pvarOldDefs;
             (n, fs)

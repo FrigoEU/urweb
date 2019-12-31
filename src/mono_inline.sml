@@ -10,7 +10,7 @@ fun inlineFull file =
                                    | SOME n => n);
          MonoReduce.fullMode := true;
          let
-             val file = MonoReduce.reduce file
+             val file = MonoReduce.reduce file false
              val file = MonoOpt.optimize file
              val file = Fuse.fuse file
              val file = MonoOpt.optimize file

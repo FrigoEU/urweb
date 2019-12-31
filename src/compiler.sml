@@ -1455,12 +1455,16 @@ val untangle = {
 
 val toUntangle = transform untangle "untangle" o toMono_opt1
 
+val mono_reduce_opt = {
+    func = fn f => MonoReduce.reduce f true,
+    print = MonoPrint.p_file MonoEnv.empty
+}
 val mono_reduce = {
-    func = MonoReduce.reduce,
+    func = fn f => MonoReduce.reduce f false,
     print = MonoPrint.p_file MonoEnv.empty
 }
 
-val toMono_reduce = transform mono_reduce "mono_reduce" o toUntangle
+val toMono_reduce = transform mono_reduce_opt "mono_reduce" o toUntangle
 
 val mono_shake = {
     func = MonoShake.shake,

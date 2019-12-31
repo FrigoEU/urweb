@@ -244,8 +244,10 @@ fun mapfoldB {typ = fc, exp = fe, bind} =
                                                                     | PNone _ => ctx
                                                                     | PSome (_, p) => pb (p, ctx)
                                                           in
-                                                              S.map2 (mfe (pb (p, ctx)) e,
-                                                                   fn e' => (p, e'))
+                                                              S.bind2 (mfp p,
+                                                                       fn p' => 
+                                                                          S.map2 (mfe (pb (p', ctx)) e,
+                                                                                  fn e' => (p', e')))
                                                           end) pes,
                                     fn pes' =>
                                        S.bind2 (mft disc,
@@ -415,6 +417,37 @@ fun mapfoldB {typ = fc, exp = fe, bind} =
               | Source t =>
                 S.map2 (mft t,
                      fn t' => Source t')
+
+        and mfp (pAll as (p, loc)) =
+            case p of
+                PVar (x, t) =>
+                S.map2 (mft t,
+                        fn t' =>
+                           (PVar (x, t'), loc))
+              | PPrim _ => S.return2 pAll
+              | PCon (dk, pc, po) =>
+                S.map2 ((case po of
+                             NONE => S.return2 NONE
+                           | SOME p => S.map2 (mfp p, SOME)),
+                        fn po' =>
+                           (PCon (dk, pc, po'), loc))
+              | PRecord xps =>
+                S.map2 (ListUtil.mapfold (fn (x, p, t) =>
+                                              S.bind2 (mfp p,
+                                                       fn p' =>
+                                                          S.map2 (mft t,
+                                                                  fn t' =>
+                                                                     (x, p', t')))) xps,
+                         fn xps' =>
+                            (PRecord xps', loc))
+              | PNone t =>
+                S.map2 (mft t,
+                        fn t' => (PNone t', loc))
+              | PSome (t, p) =>
+                S.bind2 (mfp p,
+                         fn p' => S.map2 (mft t,
+                                    fn t' => (PSome (t', p'), loc)))
+                
     in
         mfe
     end

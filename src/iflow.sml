@@ -1889,7 +1889,7 @@ fun check (file : file) =
                   rfuns := IM.empty)
 
         (*val () = Print.preface ("FilePre", MonoPrint.p_file MonoEnv.empty file)*)
-        val file = MonoReduce.reduce file
+        val file = MonoReduce.reduce file false
         val file = MonoOpt.optimize file
         val file = Fuse.fuse file
         val file = MonoOpt.optimize file
