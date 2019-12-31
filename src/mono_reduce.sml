@@ -1387,7 +1387,7 @@ fun reduce (file: file) (optim: bool) =
                      | DDatatype (ds as (_ :: _)) =>
                        let 
                            val () = debug ("DDatatype: ") ()
-                           val () = List.app (fn d => ( TextIO.print (#1 d ^ " #" ^ Int.toString (#2 d) ^ " ")
+                           val () = List.app (fn d => ( debug (#1 d ^ " #" ^ Int.toString (#2 d) ^ " ") ()
                                                       (* ; List.app (fn c => *)
                                                       (*                ( Print.preface ( #1 c ^ " :: " *)
                                                       (*                                , case #3 c of *)
@@ -1469,11 +1469,11 @@ fun reduce (file: file) (optim: bool) =
                 (#1 file)
         val file' = (List.rev newDecls, #2 file)
         val compareTime = Time.toMilliseconds (#usr (Timer.checkCPUTimer compareTimer))
-        val () = if not optim then () else debug ("Comparetime: " ^ LargeInt.toString compareTime ^ "ms\n") ()
+        val () = if not optim then () else TextIO.print ("Comparetime: " ^ LargeInt.toString compareTime ^ "ms\n")
         val reduceTimer = Timer.startCPUTimer ()
         val res = doReduce file'
         val reduceTime = Time.toMilliseconds (#usr (Timer.checkCPUTimer reduceTimer))
-        val () = if not optim then () else debug ("Reducetime: " ^ LargeInt.toString reduceTime ^ "ms\n") ()
+        val () = if not optim then () else TextIO.print ("Reducetime: " ^ LargeInt.toString reduceTime ^ "ms\n")
         (* val () = List.app (fn d => Print.preface ("", (MonoPrint.p_decl E.empty d))) (#1 res) *)
         (* val () = TextIO.flushOut TextIO.stdOut *)
         (* val () = if not optim then () else printnames res *)
