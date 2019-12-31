@@ -165,6 +165,10 @@ fun rfc3339_in s =
             None => error <xml>Invalid RFC 3339 string "{[s]}"</xml>
           | Some (time, sep, rest) =>
             let
+                val time = case String.split time #"." of
+                               None => time
+                             | Some (time, _) => time
+
                 val t = case readUtc (date ^ " " ^ time) of
                             None => error <xml>Invalid RFC 3339 string "{[s]}"</xml>
                           | Some t => t
@@ -356,7 +360,7 @@ fun json_record_withOptional [ts ::: {Type}] [ots ::: {Type}] [ts ~ ots]
                                   escape name ^ ":" ^ j.ToJson v ^ (case acc of
                                                                         "" => ""
                                                                       | acc => "," ^ acc))
-                          "" ofl ojss onames (r --- _)
+                          withRequired ofl ojss onames (r --- _)
                  in
                      "{" ^ withOptional ^ "}"
                  end,
