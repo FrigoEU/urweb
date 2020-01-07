@@ -34,49 +34,82 @@ open Print
 
 open Elab
 
+
 structure E = ElabEnv
 
 val debug = ref false
 
+(*
+hvBox = all horizontal if everything fits, otherwise all vertical
+frontSeps = add seperator to the front of the item. eg:
+{ A: int
+, B: string
+}
+
+instead of
+{ A: int,
+  B: string }
+*)
+
+fun pad (n, ch, s) =
+    if size s >= n then
+        s
+    else
+        str ch ^ pad (n-1, ch, s)
+
+fun hvBoxFrontSeps (firstC: string) (last: string) (sepC: string) (descs: pp_desc list) =
+    let
+        val longest = Int.max (String.size firstC, String.size sepC)
+        val first = pad (longest + 1, #" ", firstC)
+        val sep = pad (longest + 1, #" ", sepC)
+    in
+        case descs of
+            [] => string (first ^ last)
+          | (head :: tail) => 
+            hvBox (PPS.Rel 0, [ hBox [string (first ^ " "), head, string " "]
+                              , break {nsp = 0, offset = 0} 
+                              ]
+                              @
+                              List.concat (List.map (fn d => [ hBox [string (sep ^ " "), d, string " "]
+                                                             , break {nsp = 0, offset = 0}]) tail)
+                              @
+                              [ hBox [string last] ])
+    end
+
+fun p_arrow (range: pp_desc) (sep: string) (domain: pp_desc)  =
+    hvBox (PPS.Rel 0, [range,
+                       string (" " ^ sep ^ " "),
+                       break {nsp = 0, offset = 0},
+                       domain])
+
 fun p_kind' par env (k, _) =
     case k of
         KType => string "Type"
-      | KArrow (k1, k2) => parenIf par (box [p_kind' true env k1,
-                                             space,
-                                             string "->",
-                                             space,
-                                             p_kind env k2])
+      | KArrow (k1, k2) => parenIf par (p_arrow (p_kind' true env k1) "->" (p_kind env k2) )
       | KName => string "Name"
       | KRecord k => box [string "{", p_kind env k, string "}"]
       | KUnit => string "Unit"
-      | KTuple ks => box [string "(",
-                          p_list_sep (box [space, string "*", space]) (p_kind env) ks,
-                          string ")"]
-
+      | KTuple ks =>
+        hvBoxFrontSeps
+          "(" ")" "*"
+          (List.map (p_kind env) ks)
       | KError => string "<ERROR>"
       | KUnif (_, _, ref (KKnown k)) => p_kind' par env k
       | KUnif (_, s, _) => string ("<UNIF:" ^ s ^ ">")
       | KTupleUnif (_, _, ref (KKnown k)) => p_kind' par env k
-      | KTupleUnif (_, nks, _) => box [string "(",
-                                       p_list_sep (box [space, string "*", space])
-                                                  (fn (n, k) => box [string (Int.toString n ^ ":"),
-                                                                     space,
-                                                                     p_kind env k]) nks,
-                                       space,
-                                       string "*",
-                                       space,
-                                       string "...)"]
-
+      | KTupleUnif (_, nks, _) =>
+        hvBoxFrontSeps
+          "(" ")" "*"
+          ((List.map (fn (n, k) => box [string (Int.toString n ^ ":"),
+                                        space,
+                                        p_kind env k]) nks)
+                                       @ [string "..."])
       | KRel n => ((if !debug then
                          string (E.lookupKRel env n ^ "_" ^ Int.toString n)
                      else
                          string (E.lookupKRel env n))
                     handle E.UnboundRel _ => string ("UNBOUND_REL" ^ Int.toString n))
-      | KFun (x, k) => box [string x,
-                            space,
-                            string "-->",
-                            space,
-                            p_kind (E.pushKRel env x) k]
+      | KFun (x, k) => p_arrow (string x) "-->" (p_kind (E.pushKRel env x) k) 
 
 and p_kind env = p_kind' false env
 
@@ -87,31 +120,23 @@ fun p_explicitness e =
 
 fun p_con' par env (c, _) =
     case c of
-        TFun (t1, t2) => parenIf par (box [p_con' true env t1,
-                                           space,
-                                           string "->",
-                                           space,
-                                           p_con env t2])
-      | TCFun (e, x, k, c) => parenIf par (box [string x,
-                                                space,
-                                                p_explicitness e,
-                                                space,
-                                                p_kind env k,
-                                                space,
-                                                string "->",
-                                                space,
-                                                p_con (E.pushCRel env x k) c])
-      | TDisjoint (c1, c2, c3) => parenIf par (box [string "[",
-                                                    p_con env c1,
-                                                    space,
-                                                    string "~",
-                                                    space,
-                                                    p_con env c2,
-                                                    string "]",
-                                                    space,
-                                                    string "=>",
-                                                    space,
-                                                    p_con env c3])
+        TFun (t1, t2) => parenIf par (p_arrow (p_con' true env t1) "->" (p_con env t2))
+      | TCFun (e, x, k, c) => parenIf par (p_arrow (hBox [string x,
+                                                         space,
+                                                         p_explicitness e,
+                                                         space,
+                                                         p_kind env k])
+                                                  "->"
+                                                  (p_con (E.pushCRel env x k) c))
+      | TDisjoint (c1, c2, c3) => parenIf par (p_arrow (hBox [string "[",
+                                                              p_con env c1,
+                                                              space,
+                                                              string "~",
+                                                              space,
+                                                              p_con env c2,
+                                                              string "]"])
+                                                        "=>"
+                                                        (p_con env c3))
       | TRecord (CRecord (_, xcs), _) =>
         let
             fun isTuple (n, xcs) =
@@ -124,21 +149,14 @@ fun p_con' par env (c, _) =
             if isTuple (1, xcs) then
                 case xcs of
                     (_, c) :: xcs =>
-                    parenIf par (box [p_con' true env c,
-                                      p_list_sep (box []) (fn (_, c) => box [space,
-                                                                             string "*",
-                                                                             space,
-                                                                             p_con' true env c]) xcs])
+                    hvBoxFrontSeps "(" ")" "*" (List.map (fn (_, c) => p_con' true env c) xcs)
                   | _ => raise Fail "ElabPrint: surprise empty tuple"
             else
-                box [string "{",
-                     p_list (fn (x, c) =>
-                                box [p_name env x,
-                                     space,
-                                     string ":",
-                                     space,
-                                     p_con env c]) xcs,
-                     string "}"]
+                hvBoxFrontSeps "{" "}" "," (List.map (fn (x, c) =>
+                                                         hvBox (PPS.Rel 0, [ p_name env x,
+                                                                             string ": ",
+                                                                             p_con env c
+                                                                           ])) xcs)
         end
       | TRecord c => box [string "$",
                           p_con' true env c]
@@ -184,55 +202,43 @@ fun p_con' par env (c, _) =
       | CApp (c1, c2) => parenIf par (box [p_con env c1,
                                            space,
                                            p_con' true env c2])
-      | CAbs (x, k, c) => parenIf true (box [string "fn",
-                                             space,
-                                             string x,
-                                             space,
-                                             string "::",
-                                             space,
-                                             p_kind env k,
-                                             space,
-                                             string "=>",
-                                             space,
-                                             p_con (E.pushCRel env x k) c])
+      | CAbs (x, k, c) => parenIf true (p_arrow (hBox [string "fn",
+                                                       space,
+                                                       string x,
+                                                       space,
+                                                       string "::",
+                                                       space,
+                                                       p_kind env k])
+                                                 "=>"
+                                                 (p_con (E.pushCRel env x k) c))
 
       | CName s => box [string "#", string s]
 
       | CRecord (k, xcs) =>
         if !debug then
-            parenIf par (box [string "[",
-                              p_list (fn (x, c) =>
-                                         box [p_name env x,
-                                              space,
-                                              string "=",
-                                              space,
-                                              p_con env c]) xcs,
-                              string "]::",
-                              p_kind env k])
+            parenIf par (
+                hvBox (PPS.Rel 0, [(hvBoxFrontSeps "[" "]" "," (List.map (fn (x, c) =>
+                                                                               p_arrow (p_name env x)
+                                                                                       "="
+                                                                                       (p_con env c)) xcs)),
+                                   string " :: ",
+                                   p_kind env k]))
         else
-            parenIf par (box [string "[",
-                              p_list (fn (x, c) =>
-                                         box [p_name env x,
-                                              space,
-                                              string "=",
-                                              space,
-                                              p_con env c]) xcs,
-                              string "]"])
-      | CConcat (c1, c2) => parenIf par (box [p_con' true env c1,
-                                              space,
-                                              string "++",
-                                              space,
-                                              p_con env c2])
+            parenIf par (hvBoxFrontSeps "[" "]" "," (List.map (fn (x, c) =>
+                                                                 p_arrow (p_name env x)
+                                                                         "="
+                                                                         (p_con env c)) xcs))
+      | CConcat (c1, c2) => parenIf par (p_arrow (p_con' true env c1)
+                                                 "++"
+                                                 (p_con env c2))
       | CMap _ => string "map"
 
       | CUnit => string "()"
 
-      | CTuple cs => box [string "(",
-                          p_list (p_con env) cs,
-                          string ")"]
-      | CProj (c, n) => box [p_con env c,
-                             string ".",
-                             string (Int.toString n)]
+      | CTuple cs => hvBoxFrontSeps "(" ")" "," (List.map (p_con env) cs)
+      | CProj (c, n) => hBox [p_con env c,
+                              string ".",
+                              string (Int.toString n)]
 
       | CError => string "<ERROR>"
       | CUnif (nl, _, _, _, ref (Known c)) => p_con' par env (E.mliftConInCon nl c)
@@ -243,20 +249,16 @@ fun p_con' par env (c, _) =
                                          | _ => string ("+" ^ Int.toString nl),
                                        string ">"]
 
-      | CKAbs (x, c) => box [string x,
-                             space,
-                             string "==>",
-                             space,
-                             p_con (E.pushKRel env x) c]
+      | CKAbs (x, c) => p_arrow (string x)
+                                "==>"
+                                (p_con (E.pushKRel env x) c)
       | CKApp (c, k) => box [p_con env c,
                              string "[[",
                              p_kind env k,
                              string "]]"]
-      | TKFun (x, c) => box [string x,
-                             space,
-                             string "-->",
-                             space,
-                             p_con (E.pushKRel env x) c]
+      | TKFun (x, c) => p_arrow (string x)
+                                "-->"
+                                (p_con (E.pushKRel env x) c)
 
         
 and p_con env = p_con' false env
@@ -296,21 +298,20 @@ fun p_pat' par env (p, _) =
                                                   space,
                                                   p_pat' true env p])
       | PRecord xps =>
-        box [string "{",
-             p_list_sep (box [string ",", space]) (fn (x, p, t) =>
-                                                      box [string x,
-                                                           space,
-                                                           string "=",
-                                                           space,
-                                                           p_pat env p,
-                                                           if !debug then
-                                                               box [space,
-                                                                    string ":",
-                                                                    space,
-                                                                    p_con env t]
-                                                           else
-                                                               box []]) xps,
-             string "}"]
+        hvBoxFrontSeps "{" "}" ","
+                       (List.map
+                          (fn (x, p, t) =>
+                              p_arrow (string x)
+                                       "="
+                                       (box [p_pat env p,
+                                            if !debug then
+                                                box [space,
+                                                     string ":",
+                                                     space,
+                                                     p_con env t]
+                                            else
+                                                box []]))
+                          xps)
 
 and p_pat x = p_pat' false x
 
@@ -345,42 +346,35 @@ fun p_exp' par env (e, _) =
       | EApp (e1, e2) => parenIf par (box [p_exp env e1,
                                            space,
                                            p_exp' true env e2])
-      | EAbs (x, t, _, e) => parenIf par (box [string "fn",
-                                               space,
-                                               string x,
-                                               space,
-                                               string ":",
-                                               space,
-                                               p_con env t,
-                                               space,
-                                               string "=>",
-                                               space,
-                                               p_exp (E.pushERel env x t) e])
+      | EAbs (x, t, _, e) => parenIf par (p_arrow (hBox [string "fn",
+                                                         space,
+                                                         string x,
+                                                         space,
+                                                         string ":",
+                                                         space,
+                                                         p_con env t])
+                                                   "=>"
+                                                   (p_exp (E.pushERel env x t) e))
       | ECApp (e, c) => parenIf par (box [p_exp env e,
                                           space,
                                           string "[",
                                           p_con env c,
                                           string "]"])
-      | ECAbs (exp, x, k, e) => parenIf par (box [string "fn",
-                                                  space,
-                                                  string x,
-                                                  space,
-                                                  p_explicitness exp,
-                                                  space,
-                                                  p_kind env k,
-                                                  space,
-                                                  string "=>",
-                                                  space,
-                                                  p_exp (E.pushCRel env x k) e])
+      | ECAbs (exp, x, k, e) => parenIf par (p_arrow (hBox [string "fn",
+                                                            space,
+                                                            string x,
+                                                            space,
+                                                            p_explicitness exp,
+                                                            space,
+                                                            p_kind env k])
+                                                     "=>"
+                                                     (p_exp (E.pushCRel env x k) e))
 
-      | ERecord xes => box [string "{",
-                            p_list (fn (x, e, _) =>
-                                       box [p_name env x,
-                                            space,
-                                            string "=",
-                                            space,
-                                            p_exp env e]) xes,
-                            string "}"]
+      | ERecord xes =>
+        hvBoxFrontSeps "{" "}" "," (List.map (fn (x, e, _) =>
+                                                 p_arrow (p_name env x)
+                                                         "="
+                                                         (p_exp env e)) xes)
       | EField (e, c, {field, rest}) =>
         if !debug then
             box [p_exp' true env e,
@@ -400,63 +394,50 @@ fun p_exp' par env (e, _) =
                  p_con' true env c]
       | EConcat (e1, c1, e2, c2) =>
         parenIf par (if !debug then
-                         box [p_exp' true env e1,
-                              space,
-                              string ":",
-                              space,
-                              p_con env c1,
-                              space,
-                              string "++",
-                              space,
-                              p_exp' true env e2,
-                              space,
-                              string ":",
-                              space,
-                              p_con env c2]
+                         p_arrow (box [p_exp' true env e1,
+                                       space,
+                                       string ":",
+                                       space,
+                                       p_con env c1])
+                                  "++"
+                                  (box [p_exp' true env e2,
+                                        space,
+                                        string ":",
+                                        space,
+                                        p_con env c2])
                      else
-                         box [p_exp' true env e1,
-                              space,
-                              string "++",
-                              space,
-                              p_exp' true env e2])
+                         p_arrow (p_exp' true env e1)
+                                 "++"
+                                 (p_exp' true env e2))
       | ECut (e, c, {field, rest}) =>
         parenIf par (if !debug then
-                         box [p_exp' true env e,
-                              space,
-                              string "--",
-                              space,
-                              p_con' true env c,
-                              space,
-                              string "[",
-                              p_con env field,
-                              space,
-                              string " in ",
-                              space,
-                              p_con env rest,
-                              string "]"]
+                         p_arrow (p_exp' true env e)
+                                 "--"
+                                 (box [p_con' true env c,
+                                       string "[",
+                                       p_con env field,
+                                       space,
+                                       string " in ",
+                                       space,
+                                       p_con env rest,
+                                       string "]"])
                      else
-                         box [p_exp' true env e,
-                              space,
-                              string "--",
-                              space,
-                              p_con' true env c])
+                         p_arrow (p_exp' true env e)
+                                 "--"
+                                 (p_con' true env c))
       | ECutMulti (e, c, {rest}) =>
         parenIf par (if !debug then
-                         box [p_exp' true env e,
-                              space,
-                              string "---",
-                              space,
-                              p_con' true env c,
-                              space,
-                              string "[",
-                              p_con env rest,
-                              string "]"]
+                         p_arrow (p_exp' true env e)
+                                 "---"
+                                 (box [p_con' true env c,
+                                       space,
+                                       string "[",
+                                       p_con env rest,
+                                       string "]"])
                      else
-                         box [p_exp' true env e,
-                              space,
-                              string "---",
-                              space,
-                              p_con' true env c])
+                         p_arrow (p_exp' true env e)
+                                 "---"
+                                 (p_con' true env c))
 
       | ECase (e, pes, _) => parenIf par (box [string "case",
                                                space,
@@ -494,11 +475,9 @@ fun p_exp' par env (e, _) =
                  string "end"]
         end
 
-      | EKAbs (x, e) => box [string x,
-                             space,
-                             string "==>",
-                             space,
-                             p_exp (E.pushKRel env x) e]
+      | EKAbs (x, e) => p_arrow (string x)
+                                "==>"
+                                (p_exp (E.pushKRel env x) e)
       | EKApp (e, k) => box [p_exp env e,
                              string "[[",
                              p_kind env k,
