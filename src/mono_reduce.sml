@@ -67,6 +67,11 @@ val cachedDatatypes = ref ([]: (({ name: string
                                  , seqNum: int
                                  , constructors: (string * int * typ option) list} list ) list))
 
+type mapping = { named: IS.set IM.map
+               , constructors: IS.set IM.map
+               , datatypes: IS.set IM.map
+               }  
+
 fun simpleTypeImpure tsyms =
     U.Typ.exists (fn TFun _ => true
                    | TDatatype (n, _) => IS.member (tsyms, n)
@@ -935,9 +940,11 @@ fun doReduce file =
             file'
     end
 
-val printDebug = false
+val printDebug = ref false
+fun setPrintDebug b =
+    printDebug := b
 fun trace (phase: string) (b: bool): bool =
-    if b orelse not printDebug
+    if b orelse not (!printDebug)
     then true
     else (TextIO.print ("Not equal: " ^ phase ^ "\n"); false)
 
@@ -960,7 +967,7 @@ fun unionMaps (m1: IS.set IM.map, m2: IS.set IM.map): IS.set IM.map =
     IM.unionWith IS.union (m1, m2)
 
 fun debugMap (m1: IS.set IM.map): unit =
-    if printDebug
+    if !printDebug
     then 
         List.app
             (fn (i, set) =>
@@ -993,10 +1000,10 @@ fun compareType (datatypeMapping: IS.set IM.map) (old: typ) (new: typ): bool =
       | _ => false
     end
 
-fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (old: exp) (new: exp): bool =
+fun compareCachedVal (m: mapping) (old: exp) (new: exp): bool =
     let
-        val recurse = compareCachedVal namedMapping datatypeMapping
-        val recurseList = compareCachedValList namedMapping datatypeMapping
+        val recurse = compareCachedVal m
+        val recurseList = compareCachedValList m
     in
         case (#1 old, #1 new) of
             (EPrim old, EPrim new) => Prim.equal (old, new)
@@ -1009,13 +1016,13 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
           | (ENamed oldN, ENamed newN) =>
             (* Check if referenced named bindings are the same *)
             trace
-                ("Named: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
-                (existsInMap (namedMapping, oldN, newN))
+                ("Named = " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+                (existsInMap (#named m, oldN, newN))
           | (ECon (_, PConVar oldN, oldEo), ECon (_, PConVar newN, newEo)) =>
             (* Check if referenced datatype constructors are the same *)
             trace
                 ("Con with PConVar: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
-                (existsInMap (namedMapping, oldN, newN)
+                (existsInMap (#constructors m, oldN, newN)
                  andalso
                  (* Check if expressions inside are the same *)
                  (case (oldEo, newEo) of
@@ -1040,9 +1047,9 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
                     | (NONE, NONE) => true
                     | _ => false
                 ))
-          | (ENone oldT, ENone newT) => compareType datatypeMapping oldT newT
+          | (ENone oldT, ENone newT) => compareType (#datatypes m) oldT newT
           | (ESome (oldT, oldE), ESome (newT, newE)) =>
-            compareType datatypeMapping oldT newT
+            compareType (#datatypes m) oldT newT
             andalso
             recurse oldE newE
           | (EFfi (oldS1, oldS2), EFfi (newS1, newS2)) =>
@@ -1051,15 +1058,15 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
             (* Check if FFI references are the same and all arguments are *)
             oldS1 = newS1
             andalso oldS2 = newS2
-            andalso ListPair.allEq (fn (oldT, newT) => compareType datatypeMapping oldT newT) (List.map #2 oldExps, List.map #2 newExps)
+            andalso ListPair.allEq (fn (oldT, newT) => compareType (#datatypes m) oldT newT) (List.map #2 oldExps, List.map #2 newExps)
             andalso recurseList (List.map #1 oldExps) (List.map #1 newExps)
           | (EApp (oldE1, oldE2), EApp (newE1, newE2)) =>
             recurse oldE1 newE1
             andalso recurse oldE2 newE2
           | (EAbs (oldStr, oldT1, oldT2, oldE), EAbs (newStr, newT1, newT2, newE)) =>
             oldStr = newStr
-            andalso compareType datatypeMapping oldT1 newT1
-            andalso compareType datatypeMapping oldT2 newT2
+            andalso compareType (#datatypes m) oldT1 newT1
+            andalso compareType (#datatypes m) oldT2 newT2
             andalso recurse oldE newE
           | (EUnop (oldStr, oldE), EUnop (newStr, newE)) =>
             oldStr = newStr
@@ -1071,7 +1078,7 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
           | (ERecord oldFields, ERecord newFields) =>
             (* First we compare record field labels, then value expressions inside *)
             List.map #1 oldFields = List.map #1 newFields
-            andalso ListPair.allEq (fn (oldT, newT) => compareType datatypeMapping oldT newT) (List.map #3 oldFields, List.map #3 newFields)
+            andalso ListPair.allEq (fn (oldT, newT) => compareType (#datatypes m) oldT newT) (List.map #3 oldFields, List.map #3 newFields)
             andalso recurseList (List.map #2 oldFields) (List.map #2 newFields)
           | (EField (oldE, oldStr), EField (newE, newStr)) =>
             oldStr = newStr
@@ -1084,14 +1091,14 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
                     fun comparePattern (oldP: pat) (newP: pat): bool = 
                         case (#1 oldP, #1 newP) of
                             (PVar (oldName, oldT), PVar (newName, newT)) =>
-                            compareType datatypeMapping oldT newT
+                            compareType (#datatypes m) oldT newT
                           | (PPrim oldP, PPrim newP) =>
                             Prim.equal (oldP, newP)
                           | (PCon (_, _, NONE), PCon (_, _, NONE)) => true
                           | (PCon (_, oldPatCon, SOME oldPo), PCon (_, newPatCon, SOME newPo)) =>
                             (case (oldPatCon, newPatCon) of
                                  (PConVar oldN, PConVar newN) =>
-                                 existsInMap (namedMapping, oldN, newN)
+                                 existsInMap (#constructors m, oldN, newN)
                                | (PConFfi oldFfi, PConFfi newFfi) => 
                                  #mod oldFfi = #mod newFfi
                                  andalso #datatyp oldFfi = #datatyp newFfi
@@ -1102,12 +1109,12 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
                             ListPair.allEq
                                 (fn (oldP, newP) =>
                                     #1 oldP = #1 newP
-                                    andalso compareType datatypeMapping (#3 oldP) (#3 newP)
+                                    andalso compareType (#datatypes m) (#3 oldP) (#3 newP)
                                     andalso comparePattern (#2 oldP) (#2 newP))
                                 (oldPs, newPs)                            
-                          | (PNone oldT, PNone newT) => compareType datatypeMapping oldT newT
+                          | (PNone oldT, PNone newT) => compareType (#datatypes m) oldT newT
                           | (PSome (oldT, oldP'), PSome (newT, newP')) =>
-                            compareType datatypeMapping oldT newT
+                            compareType (#datatypes m) oldT newT
                             andalso comparePattern oldP' newP'
                           | _ => false
                 in
@@ -1118,8 +1125,8 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
                         )
                         (oldPatterns, newPatterns)
                 end
-                val res3 = compareType datatypeMapping oldT1 newT1
-                val res4 = compareType datatypeMapping oldT2 newT2
+                val res3 = compareType (#datatypes m) oldT1 newT1
+                val res4 = compareType (#datatypes m) oldT2 newT2
             in
                 res1 andalso res2 andalso res3 andalso res4
             end
@@ -1127,18 +1134,18 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
             recurse oldE1 newE1
             andalso recurse oldE2 newE2
           | (EError (oldE, oldT), EError (newE, newT)) =>
-            compareType datatypeMapping oldT newT
+            compareType (#datatypes m) oldT newT
             andalso
             recurse oldE newE
           | (EReturnBlob {blob = NONE, mimeType = oldME, t = oldT}, EReturnBlob {blob = NONE, mimeType = newME, t = newT}) =>
-            compareType datatypeMapping oldT newT
+            compareType (#datatypes m) oldT newT
             andalso
             recurse oldME newME
           | (EReturnBlob {blob = SOME oldBE, mimeType = oldME, ...}, EReturnBlob {blob = SOME newBE, mimeType = newME, ...}) =>
             recurse oldME newME
             andalso recurse oldBE newBE
           | (ERedirect (oldE, oldT), ERedirect (newE, newT)) => 
-            compareType datatypeMapping oldT newT
+            compareType (#datatypes m) oldT newT
             andalso recurse oldE newE
           | (EWrite oldE, EWrite newE) =>
             recurse oldE newE
@@ -1147,7 +1154,7 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
             andalso recurse oldE2 newE2
           | (ELet (oldName, oldT, oldE1, oldE2), ELet (newName, newT, newE1, newE2)) =>
             recurse oldE1 newE1
-            andalso compareType datatypeMapping oldT newT
+            andalso compareType (#datatypes m) oldT newT
             andalso recurse oldE2 newE2
           | (EClosure (_, oldExps), EClosure (_, newExps)) =>
             recurseList oldExps newExps
@@ -1165,13 +1172,13 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
             andalso recurse oldE2 newE2
           | (EUnurlify (oldE, oldT, oldB), EUnurlify (newE, newT, newB)) =>
             oldB = newB
-            andalso compareType datatypeMapping oldT newT
+            andalso compareType (#datatypes m) oldT newT
             andalso recurse oldE newE
           | (EJavaScript (oldJm, oldE), EJavaScript (newJm, newE)) =>
             (case (oldJm, newJm) of
                  (Attribute, Attribute) => true
                | (Script, Script) => true
-               | (Source t1, Source t2) => compareType datatypeMapping t1 t2
+               | (Source t1, Source t2) => compareType (#datatypes m) t1 t2
                | _ => false)
             andalso recurse oldE newE
           | (ESignalReturn oldE, ESignalReturn newE) =>
@@ -1183,10 +1190,10 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
             recurse oldE newE
           | (EServerCall (oldE, oldT, _, oldFm), EServerCall (newE, newT, _, newFm)) =>
             oldFm = newFm
-            andalso compareType datatypeMapping oldT newT
+            andalso compareType (#datatypes m) oldT newT
             andalso recurse oldE newE
           | (ERecv (oldE, oldT), ERecv (newE, newT)) =>
-            compareType datatypeMapping oldT newT
+            compareType (#datatypes m) oldT newT
             andalso recurse oldE newE
           | (ESleep oldE, ESleep newE) =>
             recurse oldE newE
@@ -1195,82 +1202,85 @@ fun compareCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.m
           | _ => false
     end
 
-and compareCachedValList namedMapping datatypeMapping (oldExps: exp list) (newExps: exp list) : bool =
+and compareCachedValList (m: mapping) (oldExps: exp list) (newExps: exp list) : bool =
     ListPair.allEq
-        (fn (oldE, newE) => compareCachedVal namedMapping datatypeMapping oldE newE)
+        (fn (oldE, newE) => compareCachedVal m oldE newE)
         (oldExps, newExps)
 
-fun updateTyp (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (t: typ): typ = 
+(* TODO: make a map from int -> refs, where int = (old) number of datatype, to make lookup faster *)
+val updatedRefs = (ref [] : (((datatype_kind * (string * int * typ option) list) ref) list) ref)
+fun updateTyp (m: mapping) (t: typ): typ = 
     (case #1 t of
          TDatatype (j, r) =>
          let
              val newJ = 
-                 case findFirstInMap (datatypeMapping, j) of
-                     NONE =>
-                     (* We don't throw here since we could be in a ref: *)
-                     (* this might already be updated so there's no problem *)
-                     (* If we do have a bug we'll throw during C compilation *)
-                     j
+                 case findFirstInMap (#datatypes m, j) of
+                     NONE => raise Fail ("Datatype - updateTyp: No mapping found for " ^ Int.toString j)
                    | SOME newJ => newJ
-             val oldDtKind = #1 (!r)
-             val oldConstrs = #2 (!r)
-             val newConstrs = List.map (fn (str, j, to) => (str
-                                                           , case findFirstInMap (namedMapping, j) of
-                                                                 (* We don't throw here, see above *)
-                                                                 NONE => j
-                                                               | SOME newJ => newJ
-                                                           , Option.map (* MonoUtil doesn't descend here since we're in a ref so doing it explicitely *)
-                                                                 (U.Typ.map (fn t' => #1 (updateTyp namedMapping datatypeMapping (t', ErrorMsg.dummySpan))))
-                                                                 to
-                                       ))
-                                       oldConstrs
          in
-             ( r := (oldDtKind, newConstrs)
+             ( if List.exists (fn r' => r' = r) (!updatedRefs)
+               then ()
+               else
+                   let
+                       val () = updatedRefs := (r :: (!updatedRefs))
+                       val oldDtKind = #1 (!r)
+                       val oldConstrs = #2 (!r)
+                       val newConstrs =
+                           List.map (fn (str, j, to) => (str
+                                                        , case findFirstInMap (#constructors m, j) of
+                                                              NONE => raise Fail ("Constructor: No mapping found for " ^ Int.toString j)
+                                                            | SOME newJ => newJ
+                                                        (* MonoUtil doesn't descend here since we're in a ref so doing it explicitely *)
+                                                        , Option.map (U.Typ.map (fn t' => #1 (updateTyp m (t', ErrorMsg.dummySpan)))) to
+                                    )) oldConstrs
+                   in
+                       r := (oldDtKind, newConstrs)
+                   end
              ; TDatatype (newJ, r))
          end
        | t' => t'
     , #2 t)
 
-fun updatePat (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (pat: pat): pat =
+fun updatePat (m: mapping) (pat: pat): pat =
     (case #1 pat of
         PCon (dtk, PConVar j, po) =>
         let
-            val newJ = case findFirstInMap (namedMapping, j) of
+            val newJ = case findFirstInMap (#constructors m, j) of
                            NONE => raise Fail ("Datatype: No mapping found for " ^ Int.toString j)
                          | SOME newJ => newJ
         in
-            PCon (dtk, PConVar newJ, Option.map (updatePat namedMapping datatypeMapping) po)
+            PCon (dtk, PConVar newJ, Option.map (updatePat m) po)
         end
-        | PRecord fields => PRecord (List.map (fn (str, pat, typ) => (str, updatePat namedMapping datatypeMapping pat, typ)) fields)
-        | PSome (t, pat) => PSome (t, updatePat namedMapping datatypeMapping pat)
+        | PRecord fields => PRecord (List.map (fn (str, pat, typ) => (str, updatePat m pat, typ)) fields)
+        | PSome (t, pat) => PSome (t, updatePat m pat)
         | p => p
     , #2 pat)
 
-fun updateExp (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (e: exp): exp =
+fun updateExp (m: mapping) (e: exp): exp =
     (case #1 e of
-        ENamed j => (case findFirstInMap (namedMapping, j) of
-                         NONE => raise Fail ("No mapping found for " ^ Int.toString j)
+        ENamed j => (case findFirstInMap (#named m, j) of
+                         NONE => raise Fail ("ENamed = No mapping found for " ^ Int.toString j)
                        | SOME newJ => ENamed newJ)
       | ECon (dt, PConVar j, eo) =>
         let
-            val newJ = case findFirstInMap (namedMapping, j) of
-                           NONE => raise Fail ("No mapping found for " ^ Int.toString j)
+            val newJ = case findFirstInMap (#constructors m, j) of
+                           NONE => raise Fail ("ECon: No mapping found for " ^ Int.toString j)
                          | SOME newJ => newJ
         in
             ECon (dt, PConVar newJ, eo)
         end
       | ECase (e, pats, t) =>
         let
-            val newpats = List.map (fn (p, e) => (updatePat namedMapping datatypeMapping p , e)) pats
+            val newpats = List.map (fn (p, e) => (updatePat m p , e)) pats
         in
             ECase (e, newpats, t)
         end
       | e => e, #2 e)
     
-fun updateCachedVal (namedMapping: IS.set IM.map) (datatypeMapping: IS.set IM.map) (e: exp): exp =
+fun updateCachedVal (m: mapping) (e: exp): exp =
     U.Exp.map
-        { typ = fn t => #1 (updateTyp namedMapping datatypeMapping (t, ErrorMsg.dummySpan))
-        , exp = fn e => #1 (updateExp namedMapping datatypeMapping (e, ErrorMsg.dummySpan))
+        { typ = fn t => #1 (updateTyp m (t, ErrorMsg.dummySpan))
+        , exp = fn e => #1 (updateExp m (e, ErrorMsg.dummySpan))
         }
         e
 
@@ -1281,12 +1291,12 @@ fun printnames (f: file) =
     ; TextIO.print "\n")
 
 fun debug (s: string) (value: 'a): 'a =
-    if printDebug
+    if !printDebug
     then (TextIO.print s; value)
     else value
 
 fun debugP (preface: string) (p: Print.PD.pp_desc) (value: 'a): 'a =
-    if printDebug
+    if !printDebug
     then (Print.preface (preface, p); TextIO.flushOut TextIO.stdOut; value)
     else value
 
@@ -1294,20 +1304,23 @@ fun reduce (file: file) (optim: bool) =
     let
         (* val () = if not optim then () else printnames file *)
         (* val () = if not optim then () else Print.preface ("full file: ", (MonoPrint.p_file E.empty file)) *)
+        val () = updatedRefs := []
         val prevVals = !cachedVals
         val prevValRecs = !cachedValRecs
         val prevDatatypes = !cachedDatatypes
         val compareTimer = Timer.startCPUTimer ()
-        val (newDecls, _, _) =
+        val (newDecls, _) =
             if not optim
-            then (List.rev (#1 file), IM.empty, IM.empty)
+            then (List.rev (#1 file), { constructors = IM.empty
+                                      , named = IM.empty
+                                      , datatypes = IM.empty })
             else
             (* Walking over all decls in file:
              * * If Vals or ValRecs are the same as previously, and their deps are, use the optimized version instead
              * * Save mappings between sequence numbers (for Named bindings and datatype bindings) if they're the same, these are used in the comparisons
              *)
             List.foldl
-                (fn (decl, (decls: decl list, namedMapping: IS.set IM.map, datatypeMapping: IS.set IM.map)) =>
+                (fn (decl, (decls: decl list, m: mapping)) =>
                     case #1 decl of
                         DVal (name, i, t, e, fullname) =>
                         let
@@ -1315,12 +1328,12 @@ fun reduce (file: file) (optim: bool) =
                             (* val () = Print.preface ((name ^" :: "), (MonoPrint.p_typ E.empty t)) *)
                             (* val () = TextIO.flushOut TextIO.stdOut *)
                             val foundByName = List.filter (fn v => #name v = name andalso #fullname v = fullname) prevVals (* names are not always unique, sometimes blank (?) => filter *)
-                            val foundByComparison = List.filter (fn v => compareCachedVal namedMapping datatypeMapping (#orig v) e
-                                                                         andalso compareType datatypeMapping (#typ v) t)
+                            val foundByComparison = List.filter (fn v => compareCachedVal m (#orig v) e
+                                                                         andalso compareType (#datatypes m) (#typ v) t)
                                                                 foundByName
                         in
                             case foundByComparison of
-                                [] => (debug ("  No hit.\n") (decl :: decls, namedMapping, datatypeMapping))
+                                [] => (debug ("  No hit.\n") (decl :: decls, m))
                               | cacheds => 
                                 let
                                     val newmapping = List.foldl (fn (cached, acc) => pushIntoMap (acc, #seqNum cached, i)) IM.empty cacheds
@@ -1328,9 +1341,11 @@ fun reduce (file: file) (optim: bool) =
                                     val () = debugMap newmapping
                                     val () = debug "\n" ()
                                 in
-                                    ( (DVal (name, i, t, updateCachedVal namedMapping datatypeMapping (#optim (List.hd cacheds)), fullname), #2 decl) :: decls
-                                    , unionMaps (newmapping, namedMapping)
-                                    , datatypeMapping)
+                                    ( (DVal (name, i, t, updateCachedVal m (#optim (List.hd cacheds)), fullname), #2 decl) :: decls
+                                    , { named = unionMaps (newmapping, #named m)
+                                      , datatypes = #datatypes m 
+                                      , constructors = #constructors m 
+                                      })
                                 end
                         end
                      | DValRec vals => 
@@ -1347,9 +1362,12 @@ fun reduce (file: file) (optim: bool) =
                                                    val extraMapping = ListPair.foldl (fn (new, cached, acc) => pushIntoMap (acc, #seqNum cached, #2 new)) IM.empty (vals, prev)
                                                in
                                                    ListPair.allEq (fn (new, cached) => compareCachedVal
-                                                                                           (unionMaps (extraMapping, namedMapping))
-                                                                                           datatypeMapping (#orig cached) (#4 new)
-                                                                                       andalso compareType datatypeMapping (#typ cached) (#3 new))
+                                                                                           { named = unionMaps (extraMapping, #named m)
+                                                                                           , constructors = #constructors m
+                                                                                           , datatypes = #datatypes m
+                                                                                           }
+                                                                                           (#orig cached) (#4 new)
+                                                                                       andalso compareType (#datatypes m) (#typ cached) (#3 new))
                                                                   (vals, prev)
                                                end
                                            )
@@ -1358,7 +1376,7 @@ fun reduce (file: file) (optim: bool) =
                            case foundByComparison of
                                [] => debug
                                          "  No hit.\n"
-                                         (decl :: decls, namedMapping, datatypeMapping)
+                                         (decl :: decls, m)
                              | cacheds => 
                                let
                                    val extraMapping =
@@ -1374,13 +1392,17 @@ fun reduce (file: file) (optim: bool) =
                                in
                                    ( ( DValRec (ListPair.map (fn ((x, i, t, _, n), cached) =>
                                                                  (x, i, t, updateCachedVal
-                                                                               (unionMaps (extraMapping, namedMapping))
-                                                                               datatypeMapping
+                                                                               { named = unionMaps (extraMapping, #named m)
+                                                                               , constructors = #constructors m
+                                                                               , datatypes = #datatypes m
+                                                                               }
                                                                                (#optim cached), n)) (vals, List.hd cacheds))
                                      , #2 decl )
                                      :: decls
-                                   , unionMaps (extraMapping, namedMapping)
-                                   , datatypeMapping
+                                   , { named = unionMaps (extraMapping, #named m)
+                                     , constructors = #constructors m
+                                     , datatypes = #datatypes m
+                                     }
                                    )
                                end
                        end
@@ -1398,7 +1420,7 @@ fun reduce (file: file) (optim: bool) =
                                                       (*            (#3 d) *)
                                                       )
                                              ) ds
-                           val (namedMapping', datatypeMapping') =
+                           val (constrMapping', datatypeMapping') =
                                let
                                    val foundByName = List.filter (fn prevds => List.map #name prevds = List.map #1 ds) prevDatatypes
                                    val foundByComparison =
@@ -1416,7 +1438,7 @@ fun reduce (file: file) (optim: bool) =
                                                                                       andalso (case (#3 oldC, #3 newC) of
                                                                                                    (NONE, NONE) => true
                                                                                                  | (SOME t1, SOME t2) =>
-                                                                                                   compareType (unionMaps (ownMapping, datatypeMapping)) t1 t2
+                                                                                                   compareType (unionMaps (ownMapping, #datatypes m)) t1 t2
                                                                                                  | _ => false))
                                                                                   (#constructors oldD, #3 newD))
                                                                (saved, ds)
@@ -1461,11 +1483,17 @@ fun reduce (file: file) (optim: bool) =
                                        end
                                end
                        in
-                           (decl :: decls, unionMaps (namedMapping, namedMapping'), unionMaps (datatypeMapping, datatypeMapping'))
+                           (decl :: decls
+                           , { named = #named m
+                             , constructors = unionMaps (constrMapping', #constructors m)
+                             , datatypes = unionMaps (datatypeMapping', #datatypes m)
+                             })
                        end
-                     | _ => (decl :: decls, namedMapping, datatypeMapping)
+                     | _ => (decl :: decls, m)
                 )
-                ([], IM.empty, IM.empty)
+                ([], { constructors = IM.empty
+                     , named = IM.empty
+                     , datatypes = IM.empty})
                 (#1 file)
         val file' = (List.rev newDecls, #2 file)
         val compareTime = Time.toMilliseconds (#usr (Timer.checkCPUTimer compareTimer))

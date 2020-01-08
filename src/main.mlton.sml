@@ -189,6 +189,8 @@ fun oneRun args =
                     SOME "select database engine"),
               ("debug", call_true Settings.setDebug,
                     SOME "save some intermediate C files"),
+              ("debugMonoReduce", call_true MonoReduce.setPrintDebug,
+               SOME "debug mono_reduce"),
               ("verbose", ZERO (fn () =>
                                 (Compiler.debug := true;
                                  Elaborate.verbose := true)),

@@ -37,4 +37,6 @@ signature MONO_REDUCE = sig
 
     val fullMode : bool ref
 
+    val setPrintDebug: bool -> unit
+
 end

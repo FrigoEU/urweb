@@ -73,12 +73,12 @@ fun pushDatatype (env : env) x n xncs =
 
 fun lookupDatatype (env : env) n =
     case IM.find (#datatypes env, n) of
-        NONE => raise UnboundNamed n
+        NONE => (TextIO.print ("Unbound named Datatype in Cjr: " ^ Int.toString n); raise UnboundNamed n)
       | SOME x => x
 
 fun lookupConstructor (env : env) n =
     case IM.find (#constructors env, n) of
-        NONE => raise UnboundNamed n
+        NONE => (TextIO.print ("Unbound named Constructor in Cjr: " ^ Int.toString n); raise UnboundNamed n)
       | SOME x => x
 
 fun pushERel (env : env) x t =
@@ -111,7 +111,7 @@ fun pushENamed (env : env) x n t =
 
 fun lookupENamed (env : env) n =
     case IM.find (#namedE env, n) of
-        NONE => raise UnboundNamed n
+        NONE => (TextIO.print ("Unbound named ENamed in Cjr: " ^ Int.toString n); raise UnboundNamed n)
       | SOME x => x
 
 fun pushStruct (env : env) n xts =
