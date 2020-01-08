@@ -1207,36 +1207,55 @@ and compareCachedValList (m: mapping) (oldExps: exp list) (newExps: exp list) : 
         (fn (oldE, newE) => compareCachedVal m oldE newE)
         (oldExps, newExps)
 
-(* TODO: make a map from int -> refs, where int = (old) number of datatype, to make lookup faster *)
-val updatedRefs = (ref [] : (((datatype_kind * (string * int * typ option) list) ref) list) ref)
+(*
+We need to remember which refs we've already updated, so we don't map sequence numbers twice.
+Most simply, we could keep a list of which refs we've already updated. This is however very slow.
+That's why we structure the refs first in an IntBinaryMap. The int we use for the key is the
+OLD (so _before_ mapping) sequence number of the datatype. As value for the map we have a list of refs,
+since, as far as I know, we can have multiple refs for a single datatype sequence number
+*)
+type constructorsRef = (datatype_kind * (string * int * typ option) list) ref
+val updatedRefs = (ref IM.empty : ((constructorsRef list) IM.map) ref)
 fun updateTyp (m: mapping) (t: typ): typ = 
     (case #1 t of
          TDatatype (j, r) =>
          let
+             (* Update datatype sequence number *)
              val newJ = 
                  case findFirstInMap (#datatypes m, j) of
                      NONE => raise Fail ("Datatype - updateTyp: No mapping found for " ^ Int.toString j)
                    | SOME newJ => newJ
+             val updatedRefsForJ = IM.find (!updatedRefs, j)
+             (* Update constructors if not already updated [see above for full explanation] *)
+             val refAlreadyUpdated =
+                 case updatedRefsForJ of
+                     NONE => false
+                   | SOME refs => List.exists (fn r' => r' = r) refs
+             val () = 
+                 if refAlreadyUpdated
+                 then ()
+                 else
+                     let
+                         val () =
+                             case updatedRefsForJ of
+                                 NONE => updatedRefs := IM.insert (!updatedRefs, j, [r])
+                               | SOME refs => updatedRefs := IM.insert (!updatedRefs, j, r :: refs)
+                         val oldDtKind = #1 (!r)
+                         val oldConstrs = #2 (!r)
+                         (* Update constructors to use new sequence numbers *)
+                         val newConstrs =
+                             List.map (fn (str, j, to) => (str
+                                                          , case findFirstInMap (#constructors m, j) of
+                                                                NONE => raise Fail ("Constructor: No mapping found for " ^ Int.toString j)
+                                                              | SOME newJ => newJ
+                                                          (* MonoUtil doesn't descend here since we're in a ref so doing it explicitely *)
+                                                          , Option.map (U.Typ.map (fn t' => #1 (updateTyp m (t', ErrorMsg.dummySpan)))) to
+                                      )) oldConstrs
+                     in
+                         r := (oldDtKind, newConstrs)
+                     end
          in
-             ( if List.exists (fn r' => r' = r) (!updatedRefs)
-               then ()
-               else
-                   let
-                       val () = updatedRefs := (r :: (!updatedRefs))
-                       val oldDtKind = #1 (!r)
-                       val oldConstrs = #2 (!r)
-                       val newConstrs =
-                           List.map (fn (str, j, to) => (str
-                                                        , case findFirstInMap (#constructors m, j) of
-                                                              NONE => raise Fail ("Constructor: No mapping found for " ^ Int.toString j)
-                                                            | SOME newJ => newJ
-                                                        (* MonoUtil doesn't descend here since we're in a ref so doing it explicitely *)
-                                                        , Option.map (U.Typ.map (fn t' => #1 (updateTyp m (t', ErrorMsg.dummySpan)))) to
-                                    )) oldConstrs
-                   in
-                       r := (oldDtKind, newConstrs)
-                   end
-             ; TDatatype (newJ, r))
+             TDatatype (newJ, r)
          end
        | t' => t'
     , #2 t)
@@ -1304,7 +1323,7 @@ fun reduce (file: file) (optim: bool) =
     let
         (* val () = if not optim then () else printnames file *)
         (* val () = if not optim then () else Print.preface ("full file: ", (MonoPrint.p_file E.empty file)) *)
-        val () = updatedRefs := []
+        val () = updatedRefs := IM.empty
         val prevVals = !cachedVals
         val prevValRecs = !cachedValRecs
         val prevDatatypes = !cachedDatatypes
