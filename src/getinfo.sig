@@ -26,6 +26,25 @@
  *)
 
 signature GET_INFO = sig 
-    val getInfo: string (* file:row:col *) -> Print.PD.pp_desc
+
+    datatype foundInEnv = FoundStr of (string * Elab.sgn)
+                        | FoundKind of (string * Elab.kind)
+                        | FoundCon of (string * Elab.con)
+
+    val findStringInEnv:
+        ElabEnv.env ->
+        Elab.str' ->
+        string (* fileName *) ->
+        {line: int, char: int} ->
+        string (* query *) ->
+        (ElabEnv.env * string (* prefix *) * foundInEnv option)
+
+    val matchStringInEnv: 
+        ElabEnv.env ->
+        Elab.str' ->
+        string (* fileName *) ->
+        {line: int, char: int} ->
+        string (* query *) ->
+        (ElabEnv.env * string (* prefix *) * foundInEnv list)
 end
     

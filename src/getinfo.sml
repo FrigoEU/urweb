@@ -30,21 +30,19 @@ structure GetInfo :> GET_INFO = struct
 structure U = ElabUtilPos
 structure E = ElabEnv
 structure L = Elab
-structure P = Print
 
-fun isPosIn file row col span =
+fun isPosIn (file: string) (line: int) (char: int) (span: ErrorMsg.span) =
     let
         val start = #first span
         val end_ = #last span
     in
-        String.isSuffix file (#file span)
+        OS.Path.base file = OS.Path.base (#file span)
         andalso
-        (#line start < row orelse
-         #line start = row andalso #char start <= col)
+        (#line start < line orelse
+         #line start = line andalso #char start <= char)
         andalso 
-        (#line end_ > row orelse
-         #line end_ = row andalso #char end_ >= col)
-
+        (#line end_ > line orelse
+         #line end_ = line andalso #char end_ >= char)
     end
 
 fun isSmallerThan (s1: ErrorMsg.span) (s2: ErrorMsg.span) =
@@ -63,8 +61,8 @@ datatype item =
          | Str of L.str
          | Decl of L.decl
 
-fun getSpan (f: item * E.env) =
-    case #1 f of
+fun getSpan (f: item) =
+    case f of
         Kind k => #2 k
       | Con c => #2 c
       | Exp e => #2 e
@@ -73,198 +71,234 @@ fun getSpan (f: item * E.env) =
       | Str s => #2 s
       | Decl d => #2 d
 
-fun getInfo' file row col =
-    if not (!Elaborate.incremental)
-    then P.PD.string "ERROR: urweb daemon is needed to use typeOf command"
-    else
-        case ModDb.lookupModAndDepsIncludingErrored (Compiler.moduleOf file) of
-            NONE => P.PD.string ("ERROR: No module found: " ^ Compiler.moduleOf file)
-          | SOME (modDecl, deps) => 
+
+fun findInStr (f: ElabEnv.env -> item (* curr *) -> item (* prev *) -> bool)
+              (init: item)
+              env str fileName {line = line, char = char}: {item: item, env: ElabEnv.env} =
+    let
+        val () = U.mliftConInCon := E.mliftConInCon
+        val {env: ElabEnv.env, found: Elab.decl option} =
+            (case str of
+                 L.StrConst decls =>
+                  List.foldl (fn (d, acc as {env, found}) =>
+                                if #line (#last (#2 d)) < line
+                                then {env = E.declBinds env d, found = found}
+                                else
+                                    if #line (#first (#2 d)) <= line andalso line <= #line (#last (#2 d))
+                                    then {env = env, found = SOME d}
+                                    else {env = env, found = found})
+                            {env = env, found = NONE} decls
+               | _ => { env = env, found = NONE })
+        val dummyResult = (init, env)
+        val result =
+            case found of
+                NONE => dummyResult
+              | SOME d => 
+                U.Decl.foldB
+                    { kind = fn (env, i, acc as (prev, env')) => if f env (Kind i) prev then (Kind i, env) else acc,
+                      con = fn (env, i, acc as (prev, env')) => if f env (Con i) prev then (Con i, env) else acc,
+                      exp = fn (env, i, acc as (prev, env')) => if f env (Exp i) prev then (Exp i, env) else acc,
+                      sgn_item = fn (env, i, acc as (prev, env')) => if f env (Sgn_item i) prev then (Sgn_item i, env) else acc,
+                      sgn = fn (env, i, acc as (prev, env')) => if f env (Sgn i) prev then (Sgn i, env) else acc,
+                      str = fn (env, i, acc as (prev, env')) => if f env (Str i) prev then (Str i, env) else acc,
+                      decl = fn (env, i, acc as (prev, env')) => if f env (Decl i) prev then (Decl i, env) else acc,
+                      bind = fn (env, binder) =>
+                                case binder of
+                                    U.Decl.RelK x => E.pushKRel env x
+                                  | U.Decl.RelC (x, k) => E.pushCRel env x k
+                                  | U.Decl.NamedC (x, n, k, co) => E.pushCNamedAs env x n k co
+                                  | U.Decl.RelE (x, c) => E.pushERel env x c
+                                  | U.Decl.NamedE (x, c) => #1 (E.pushENamed env x c)
+                                  | U.Decl.Str (x, n, sgn) => #1 (E.pushStrNamed env x sgn)
+                                  | U.Decl.Sgn (x, n, sgn) => #1 (E.pushSgnNamed env x sgn)
+                    }
+                    env dummyResult d
+    in
+        {item = #1 result, env = #2 result}
+    end
+
+fun findClosestSpan env str fileName {line = line, char = char} =
+    let
+        fun getDistance (i: item): int =
             let
-                val () = U.mliftConInCon := E.mliftConInCon
-
-                (* Adding signature of dependencies to environment *)
-                val env = List.foldl (fn (d, e) => E.declBinds e d) E.empty deps
-
-                (* Adding previous declarations in file to environment *)
-                (* "open <mod>" statements are already translated during elaboration *)
-                (*   They get added to the env here "unprefixed" *)
-                val env =
-                    case #1 modDecl of 
-                        L.DStr (name, _, sgn, str) =>
-                        (case #1 str of
-                             L.StrConst decls =>
-                             List.foldl (fn (d, env) =>
-                                            if #line (#first (#2 d)) <= row
-                                               andalso #char (#first (#2 d)) <= col
-                                            then E.declBinds env d
-                                            else env) env decls
-                           | _ => env)
-                      | L.DFfiStr _ => env
-                      | _ => env
-
-                (* Basis and Top need to be added to the env explicitly *)
-                val env =
-                    case ModDb.lookupModAndDepsIncludingErrored  "Top" of
-                        NONE => raise Fail "ERROR: Top module not found in ModDb"
-                      | SOME ((L.DStr (_, top_n, topSgn, topStr), _), _) => 
-                        #2 (Elaborate.dopen env {str = top_n, strs = [], sgn = topSgn})
-                      | _ => raise Fail "ERROR: Impossible"
-                val env =
-                    case ModDb.lookupModAndDepsIncludingErrored "Basis" of
-                        NONE => raise Fail "ERROR: Top module not found in ModDb"
-                      | SOME ((L.DFfiStr (_, basis_n, sgn), _), _) =>
-                        #2 (Elaborate.dopen env {str = basis_n, strs = [], sgn = sgn})
-                      | _ => raise Fail "ERROR: Impossible"
-
-                (* Just use ElabPrint functions. *)
-                (* These are better for compiler error message, but it's better than nothing *)
-                fun printLiterally {span = span, item = item, env = env} =
-                    P.box [ case item of
-                                Kind k => P.box [P.PD.string "KIND: ", ElabPrint.p_kind env k]
-                              | Con c => P.box [P.PD.string "CON: ", ElabPrint.p_con env c]
-                              | Exp e => P.box [P.PD.string "EXP: ", ElabPrint.p_exp env e]
-                              | Sgn_item si => P.box [P.PD.string "SGN_ITEM: ", ElabPrint.p_sgn_item env si]
-                              | Sgn s => P.box [P.PD.string "SGN: ", ElabPrint.p_sgn env s]
-                              | Str s => P.box [P.PD.string "STR: ", ElabPrint.p_str env s]
-                              | Decl d => P.box [P.PD.string "DECL: ", ElabPrint.p_decl env d]
-                          ]
-
-                (* TODO We lose some really useful information, like eg. inferred parameters, *)
-                (*   which we do have in the actual items (L.Decl, L.Exp, etc) *)
-                (*   but not when we do a lookup into the Env *)
-                (* TODO Rename? *)
-                fun printGoodPart env f span =
-                    (case f of
-                         Exp (L.EPrim p, _) =>
-                         SOME (P.box [Prim.p_t p,
-                                      P.PD.string ": ",
-                                      P.PD.string (case p of
-                                                       Prim.Int _ => "int"
-                                                     | Prim.Float _ => "float"
-                                                     | Prim.String _ => "string"
-                                                     | Prim.Char _ => "char")])
-                       | Exp (L.ERel n, _) =>
-                         SOME ((let val found = E.lookupERel env n
-                                in
-                                    P.box [ P.PD.string (#1 found)
-                                          , P.PD.string ": "
-                                          , ElabPrint.p_con env (#2 found)]
-                                end)
-                               handle E.UnboundRel _ => P.PD.string ("UNBOUND_REL" ^ Int.toString n))
-                       | Exp (L.ENamed n, _) =>
-                         SOME ((let val found = E.lookupENamed env n
-                                in
-                                    P.box [ P.PD.string (#1 found)
-                                          , P.PD.string ": "
-                                          , ElabPrint.p_con env (#2 found)]
-                                end)
-                               handle E.UnboundNamed _ => P.PD.string ("UNBOUND_NAMED" ^ Int.toString n))
-                       | Exp (L.EModProj ( m1 (* number (= "name") of top level module *)
-                                        , ms (* names of submodules - possibly none *)
-                                        , x (* identifier *)), loc) =>
-                         SOME (let
-                                  val (m1name, m1sgn) = E.lookupStrNamed env m1
-                                  val (str, sgn) = foldl (fn (m, (str, sgn)) =>
-                                                             case E.projectStr env {sgn = sgn, str = str, field = m} of
-                                                                 NONE => raise Fail ("Couldn't find Structure: " ^ m)
-                                                               | SOME sgn => ((L.StrProj (str, m), loc), sgn))
-                                                         ((L.StrVar m1, loc), m1sgn)
-                                                         ms
-                                  val t = case E.projectVal env {sgn = sgn, str = str, field = x} of
-                                              NONE => raise Fail ("Couldn't find identifier: " ^ x)
-                                            | SOME t => t
-                              in
-                                  P.box [ P.p_list_sep (P.PD.string ".") P.PD.string (m1name :: ms @ [x])
-                                        , P.PD.string ": "
-                                        , ElabPrint.p_con env t
-                                        ]
-                              end
-                               handle E.UnboundNamed _ => P.PD.string ("Module not found: " ^ Int.toString m1))
-                       | Exp e => NONE
-                       | Kind k => NONE
-                       | Con c => NONE
-                       | Sgn_item si => NONE
-                       | Sgn s => NONE
-                       | Str s => NONE
-                       | Decl d => NONE)
-
-                fun add env item span acc =
-                           if not (isPosIn file row col span)
-                           then
-                               acc
-                           else
-                               let
-                                   val smallest =
-                                       if isSmallerThan span (#span (#smallest acc))
-                                       then {span = span, item = item, env = env}
-                                       else #smallest acc
-                                   val smallestgoodpart =
-                                       case #smallestgoodpart acc of
-                                           NONE => 
-                                           (case printGoodPart env item span of
-                                                NONE => NONE
-                                              | SOME desc => SOME (desc, span))
-                                         | SOME (desc', span') => 
-                                           if isSmallerThan span span'
-                                           then 
-                                               (case printGoodPart env item span of
-                                                    NONE => SOME (desc', span')
-                                                  | SOME desc => SOME (desc, span))
-                                           else SOME (desc', span')
-                               in
-                                   {smallest = smallest, smallestgoodpart = smallestgoodpart}
-                               end
-
-                (* Look for item at input position *)
-                (* We're looking for two things simultaneously: *)
-                (* 1. The "smallest" part, ie. the one of which the source span is the smallest *)
-                (* 2. The "smallestgoodpart" part, ie. the one of which the source span is the smallest AND has a special case in printGoodPart *)
-                (* If we end up with a smallestgoodpart, we'll show that one since that one is probably more useful  *)
-                (* TODO source spans of XML and SQL sources are weird and you end *)
-                (*   up with eg: a span from eg 1-5 and another from 2-6, makes no sense? *)
-                (*   That's one of the reasons why we're searching for the two things mentioned above *)
-                val result =
-                    U.Decl.foldB
-                        { kind = fn (env, (k, span), acc) => add env (Kind (k, span)) span acc,
-                          con = fn (env, (k, span), acc) => add env (Con (k, span)) span acc,
-                          exp = fn (env, (k, span), acc) => add env (Exp (k, span)) span acc,
-                          sgn_item = fn (env, (k, span), acc) => add env (Sgn_item (k, span)) span acc,
-                          sgn = fn (env, (k, span), acc) => add env (Sgn (k, span)) span acc,
-                          str = fn (env, (k, span), acc) => add env (Str (k, span)) span acc,
-                          decl = fn (env, (k, span), acc) => add env (Decl (k, span)) span acc,
-                          bind = fn (env, binder) =>
-                                    case binder of
-                                        U.Decl.RelK x => E.pushKRel env x
-                                      | U.Decl.RelC (x, k) => E.pushCRel env x k
-                                      | U.Decl.NamedC (x, n, k, co) => E.pushCNamedAs env x n k co
-                                      | U.Decl.RelE (x, c) => E.pushERel env x c
-                                      | U.Decl.NamedE (x, c) => #1 (E.pushENamed env x c)
-                                      | U.Decl.Str (x, n, sgn) => #1 (E.pushStrNamed env x sgn)
-                                      | U.Decl.Sgn (x, n, sgn) => #1 (E.pushSgnNamed env x sgn)
-                        }
-                        env
-                        { smallestgoodpart = NONE
-                        , smallest = { item = Decl (#1 modDecl, { file = file
-                                                                , first = { line = 0, char = 0}
-                                                                , last = { line = 99999, char = 0} })
-                                     , span = { file = file
-                                              , first = { line = 0, char = 0}
-                                              , last = { line = 99999, char = 0} }
-                                     , env = env }
-                        }
-                        modDecl
+                val {first, last, file} = getSpan i
             in
-                case #smallestgoodpart result of
-                    NONE => printLiterally (#smallest result)
-                  | SOME (desc, span) => desc
+                Int.abs (#char first - char)
+                + Int.abs (#char last - char)
+                + Int.abs (#line first - line) * 25
+                + Int.abs (#line last - line) * 25
             end
+        fun isCloser (env: ElabEnv.env) (curr: item) (prev: item) =
+            getDistance curr < getDistance prev
+        val init = Str (str, { file = fileName
+                             , first = { line = 0, char = 0}
+                             , last = { line = 0, char = 0} })
+    in
+        findInStr isCloser init env str fileName {line = line, char = char}
+    end
 
-fun getInfo loc =
-    case String.tokens (fn ch => ch = #":") loc of
-        file :: rowStr :: colStr :: nil =>
-        (case (Int.fromString rowStr, Int.fromString colStr) of
-             (SOME row, SOME col) => getInfo' file row col
-           | _ => P.PD.string "ERROR: Wrong typeOf input format, should be <file:row:col>")
-      | _ => P.PD.string "ERROR: Wrong typeOf input format, should be <file:row:col>"
+fun findFirstExpAfter env str fileName {line = line, char = char} =
+    let
+        fun currIsAfterPosAndBeforePrev (env: ElabEnv.env) (curr: item) (prev: item) =
+            (* curr is an exp *)
+            (case curr of Exp _ => true | _ => false)
+            andalso
+            (* curr is after input pos *)
+            ( line < #line (#first (getSpan curr))
+              orelse ( line = #line (#first (getSpan curr))
+                       andalso char < #char (#first (getSpan curr))))
+            andalso
+            (* curr is before prev *)
+            (#line (#first (getSpan curr)) < #line (#first (getSpan prev))
+             orelse
+             (#line (#first (getSpan curr)) = #line (#first (getSpan prev))
+              andalso #char (#first (getSpan curr)) < #char (#first (getSpan prev))))
+        val init = Exp (Elab.EPrim (Prim.Int 0),
+                        { file = fileName
+                        , first = { line = Option.getOpt (Int.maxInt, 99999), char = Option.getOpt (Int.maxInt, 99999)}
+                        , last = { line = Option.getOpt (Int.maxInt, 99999), char = Option.getOpt (Int.maxInt, 99999)} })
+    in
+        findInStr currIsAfterPosAndBeforePrev init env str fileName {line = line, char = char}
+    end
+
+
+datatype foundInEnv = FoundStr of (string * Elab.sgn)
+                    | FoundKind of (string * Elab.kind)
+                    | FoundCon of (string * Elab.con)
+
+fun getNameOfFoundInEnv (f: foundInEnv) =
+    case f of
+        FoundStr (x, _) => x
+      | FoundKind (x, _) => x
+      | FoundCon (x, _) => x
+
+fun filterSgiItems (items: Elab.sgn_item list) : foundInEnv list =
+    let
+        fun processDatatype loc (dtx, i, ks, cs) =
+            let
+                val k' = (Elab.KType, loc)
+                val k = FoundKind (dtx, foldl (fn (_, k) => (Elab.KArrow (k', k), loc)) k' ks)
+                val foundCs = List.map (fn (x, j, co) =>
+                                           let
+                                               val c = case co of
+                                                           NONE => (Elab.CNamed i, loc)
+                                                         | SOME c => (Elab.TFun (c, (Elab.CNamed i, loc)), loc)
+                                           in
+                                               FoundCon (x, c)
+                                           end) cs
+            in
+                k :: foundCs
+            end
+        fun mapF item =
+            case item of
+                (Elab.SgiVal (name, _, c), _) => [FoundCon (name, c)]
+              | (Elab.SgiCon (name, _, k, _), _) => [FoundKind (name, k)]
+              | (Elab.SgiDatatype ds, loc) =>
+                List.concat (List.map (processDatatype loc) ds)
+              | (Elab.SgiDatatypeImp (dtx, i, _, ks, _, _, cs), loc) => processDatatype loc (dtx, i, ks, cs)
+              | (Elab.SgiStr (_, name,  _, sgn), _) =>
+                [FoundStr (name, sgn)]
+              | (Elab.SgiSgn (name,  _, sgn), _) => []
+              | _ => []
+    in
+        List.concat (List.map mapF items)
+    end
+
+fun resolvePrefixes
+    (env: ElabEnv.env)
+    (prefixes: string list)
+    (items : foundInEnv list)
+    : foundInEnv list 
+    = 
+    case prefixes of
+        [] => items
+      | first :: rest => 
+        (case List.find (fn item => getNameOfFoundInEnv item = first) items of
+             NONE => []
+           | SOME (FoundStr (name, sgn)) => (case ElabEnv.hnormSgn env sgn of
+                                                 (Elab.SgnConst sgis, _) => resolvePrefixes env rest (filterSgiItems sgis)
+                                               | _ => [])
+           | SOME (FoundCon (name, c)) =>
+             let
+                 val fields = case ElabOps.reduceCon env c of
+                                  (Elab.TRecord (Elab.CRecord (_, fields), l2_), l1_) =>
+                                  fields
+                                | ( ( Elab.CApp
+                                      ( ( (Elab.CApp
+                                            ( ( Elab.CModProj (_, _, "sql_table") , l4_)
+                                            , ( Elab.CRecord (_, fields) , l3_)))
+                                        , l2_)
+                                      , _))
+                                  , l1_) => fields
+                                | _ => []
+                 val items = 
+                     List.mapPartial (fn (c1, c2) => case c1 of
+                                                         (Elab.CName fieldName, _) => SOME (FoundCon (fieldName, c2))
+                                                       | _  => NONE) fields
+             in
+                 resolvePrefixes env rest items
+             end
+           | SOME (FoundKind (_, _)) => [])
+                                         
+
+fun findStringInEnv' (env: ElabEnv.env) (preferCon: bool) (str: string): (string (* prefix *) * foundInEnv option) =
+    let
+        val splitted = List.map Substring.string (Substring.fields (fn c => c = #".") (Substring.full str))
+        val afterResolve = resolvePrefixes env (List.take (splitted, List.length splitted - 1))
+                                                ( List.map (fn (name, (_, sgn)) => FoundStr (name, sgn)) (ElabEnv.dumpStrs env)
+                                                @ List.map FoundKind (ElabEnv.dumpCs env)
+                                                @ List.map FoundCon (ElabEnv.dumpEs env))
+        val query = List.last splitted 
+        val prefix = String.extract (str, 0, SOME (String.size str - String.size query))
+    in
+        (prefix, List.find (fn i => getNameOfFoundInEnv i = query) afterResolve)
+    end
+
+fun matchStringInEnv' (env: ElabEnv.env) (str: string): (string (* prefix *) * foundInEnv list) =
+    let
+        val splitted = List.map Substring.string (Substring.fields (fn c => c = #".") (Substring.full str))
+        val afterResolve = resolvePrefixes env (List.take (splitted, List.length splitted - 1))
+                                                ( List.map (fn (name, (_, sgn)) => FoundStr (name, sgn)) (ElabEnv.dumpStrs env)
+                                                  @ List.map FoundKind (ElabEnv.dumpCs env)
+                                                  @ List.map FoundCon (ElabEnv.dumpEs env))
+        val query = List.last splitted 
+        val prefix = String.extract (str, 0, SOME (String.size str - String.size query))
+    in
+        (prefix, List.filter (fn i => String.isPrefix query (getNameOfFoundInEnv i)) afterResolve)
+    end
+
+fun getDesc item =
+    case item of
+        Kind (_, s) => "Kind " ^ ErrorMsg.spanToString s
+      | Con (_, s) =>  "Con " ^ ErrorMsg.spanToString s
+      | Exp (_, s) =>  "Exp " ^ ErrorMsg.spanToString s
+      | Sgn_item (_, s) =>  "Sgn_item " ^ ErrorMsg.spanToString s
+      | Sgn (_, s) =>  "Sgn " ^ ErrorMsg.spanToString s
+      | Str (_, s) =>  "Str " ^ ErrorMsg.spanToString s
+      | Decl (_, s) =>  "Decl " ^ ErrorMsg.spanToString s
+
+fun matchStringInEnv env str fileName pos query: (ElabEnv.env * string (* prefix *) * foundInEnv list) = 
+    let
+        val {item = _, env} = findClosestSpan env str fileName pos
+        val (prefix, matches) = matchStringInEnv' env query
+    in
+        (env, prefix, matches)
+    end
+
+fun findStringInEnv env str fileName pos (query: string): (ElabEnv.env * string (* prefix *) * foundInEnv option) =
+    let
+        val {item, env} = findClosestSpan env str fileName pos
+        val env = case item of
+                      Exp (L.ECase _, _) => #env (findFirstExpAfter env str fileName pos)
+                    | Exp (L.ELet _, _)  => #env (findFirstExpAfter env str fileName pos)
+                    | Exp (L.EAbs _, _)  => #env (findFirstExpAfter env str fileName pos)
+                    | Exp e              => env
+                    | Con _              => #env (findFirstExpAfter env str fileName pos)
+                    | _                  => #env (findFirstExpAfter env str fileName pos)
+        val preferCon = case item of Con _ => true 
+                                   | _ => false
+        val (prefix, found) = findStringInEnv' env preferCon query
+    in
+        (env, prefix, found)
+    end
 end
