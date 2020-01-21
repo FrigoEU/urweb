@@ -456,4 +456,7 @@ val () = (Globals.setResetTime ();
             | ["daemon", "restart"] =>
               (ignore (oneCommandLine ["daemon", "stop"]);
                startDaemon ())
+            | ["-startLspServer"] =>
+              ( Lsp.startServer ()
+              ; OS.Process.exit OS.Process.success)
             | args => OS.Process.exit (oneCommandLine args))
