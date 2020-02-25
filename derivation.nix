@@ -33,6 +33,8 @@ stdenv.mkDerivation rec {
     export PGHEADER="${postgresql}/include/libpq-fe.h";
     export MSHEADER="${mysql.connector-c}/include/mysql/mysql.h";
     export SQHEADER="${sqlite.dev}/include/sqlite3.h";
+    export ICU_LIBS="-L${icu.out}/lib";
+    export ICU_INCLUDES="-I${icu.dev}/include";
     export CC="${gcc}/bin/gcc";
     export CCARGS="-I$out/include \
                    -I${icu.dev}/include \

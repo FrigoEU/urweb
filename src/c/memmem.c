@@ -58,7 +58,7 @@ void *
 memmem(const void *b1, size_t len1, const void *b2, size_t len2)
 {
         /* Sanity check */
-        if(!(b1 != NULL && b2 != NULL && len1 != 0 && len2 != 0))
+        if(!(len1 != 0 && len2 != 0))
                 return NULL;
 
         /* Initialize search pointer */
