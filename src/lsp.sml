@@ -117,6 +117,21 @@ fun initState (initParams: LspSpec.initializeParams): state =
         }
     end
 
+fun addTypeInSgnItemToEnv (moduleName: string) (sgi: Elab.sgn_item, env: ElabEnv.env) : ElabEnv.env =
+    case sgi of
+        (Elab.SgiDatatype ds, loc) => 
+        List.foldl (fn ((x, n, xs, _), env) =>
+                       let
+                           val k = (Elab.KType, loc)
+                           val k' = foldl (fn (_, k') => (Elab.KArrow (k, k'), loc)) k xs
+                       in
+                           ElabEnv.pushCNamedAs env (moduleName ^ "." ^ x) n k' NONE
+                       end)
+                   env ds
+      | (Elab.SgiConAbs (x, n, k), _) => ElabEnv.pushCNamedAs env (moduleName ^ "." ^ x) n k NONE
+      | (Elab.SgiCon (x, n, k, c), _) => ElabEnv.pushCNamedAs env (moduleName ^ "." ^ x) n k (SOME c)
+      | _ => env
+                 
 fun addSgnToEnv (env: ElabEnv.env) (sgn: Source.sgn_item list) (fileName: string) (addUnprefixed: bool): ElabEnv.env =
     let
         val moduleName = C.moduleOf fileName
@@ -133,7 +148,9 @@ fun addSgnToEnv (env: ElabEnv.env) (sgn: Source.sgn_item list) (fileName: string
         val (env', n) = ElabEnv.pushStrNamed env moduleName sgn
         val (_, env') = if addUnprefixed
                         then Elaborate.dopen env' {str = n, strs = [], sgn = sgn}
-                        else ([], env')
+                        else case sgn of
+                                 (Elab.SgnConst sgis, _) => ([], List.foldl (addTypeInSgnItemToEnv moduleName) env' sgis)
+                               | _ => ([], env')
     in
         env'
     end
