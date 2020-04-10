@@ -208,6 +208,7 @@ signature COMPILER = sig
     val debug : bool ref
     val dumpSource : bool ref
     val enableBoot : unit -> unit
+    val partialBuild: string option ref
 
     val doIflow : bool ref
 

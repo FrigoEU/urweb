@@ -125,7 +125,9 @@ fun oneRun args =
                   Compiler.dumpSource := false;
                   Compiler.doIflow := false;
                   Demo.noEmacs := false;
-                  Settings.setDebug false)
+                  Settings.setDebug false;
+                  Compiler.partialBuild := NONE
+                 )
 
         val () = Compiler.beforeC := MLton.GC.pack
 
@@ -248,6 +250,10 @@ fun oneRun args =
               ("moduleOf", ONE ("<file>", printModuleOf),
                     SOME "print module name of <file> and exit"),
               ("startLspServer", ZERO Lsp.startServer, SOME "Start Language Server Protocol server"),
+              ("partialBuild", ONE ("<module>",
+                                    (fn module =>
+                                        Compiler.partialBuild := SOME module)),
+               SOME "prefix names of modules found in <path> with <name>"),
               ("noEmacs", set_true Demo.noEmacs,
                     NONE),
               ("limit", TWO ("<class>", "<num>", add_class),
