@@ -4768,9 +4768,7 @@ fun elabFile basis basis_tm topStr topSgn top_tm env file =
             case (if !incremental then ModDb.lookup d else NONE) of
                 NONE =>
                 let
-                    val () = TextIO.print ("En nu ben ik 1")
                     val (sgn, gs) = elabSgn (env, D.empty) (L.SgnConst basis, ErrorMsg.dummySpan)
-                    val () = TextIO.print ("En nu ben ik 2")
                     val () = case gs of
                                  [] => ()
                                | _ => (app (fn (_, env, _, c1, c2) =>
@@ -4779,9 +4777,7 @@ fun elabFile basis basis_tm topStr topSgn top_tm env file =
                                                          ("c2", p_con env c2)]) gs;
                                        raise Fail "Unresolved disjointness constraints in Basis")
 
-                    val () = TextIO.print ("En nu ben ik 3")
                     val (env', basis_n) = E.pushStrNamed {file = "Basis", first = ErrorMsg.dummyPos, last = ErrorMsg.dummyPos} env "Basis" sgn
-                    val () = TextIO.print ("En nu ben ik 4")
                 in
                     ModDb.insert ((L'.DFfiStr ("Basis", basis_n, sgn), ErrorMsg.dummySpan), basis_tm);
                     (basis_n, env', sgn)

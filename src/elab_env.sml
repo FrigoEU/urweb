@@ -247,43 +247,42 @@ val currentOffset: int ref = ref 0
 val filenameToLineNumberOffset: int SM.map ref = ref SM.empty
 val lineNumberToCounter: (int ref) IM.map ref = ref IM.empty
 
-fun getNamedCounter (s: ErrorMsg.span) = 
+fun freshNamed (s: ErrorMsg.span): int = 
     let
-        val fullLineNumber = case SM.find (!filenameToLineNumberOffset, #file s) of
-                                 NONE =>
-                                 (let
-                                     val offset = !currentOffset
-                                 in
-                                     filenameToLineNumberOffset := SM.insert (!filenameToLineNumberOffset, #file s, offset);
-                                     currentOffset := offset + (2000 * 10); (* max 2k LOC per file... x 10 bindings per line *)
-                                     offset + #line (#first s)
-                                 end
-                                 )
-                               | SOME i => i + #line (#first s)
-        val counter = case IM.find (!lineNumberToCounter, fullLineNumber) of
+        val fileOffset = case SM.find (!filenameToLineNumberOffset, #file s) of
+                             NONE =>
+                             (let
+                                 val offset = !currentOffset
+                             in
+                                 filenameToLineNumberOffset := SM.insert (!filenameToLineNumberOffset, #file s, offset);
+                                 currentOffset := offset + 1;
+                                 offset
+                             end
+                             )
+                           | SOME i => i
+        val maxLocPerFile = 2000
+        val maxNamedPerLine = 10
+        val lineNumber = #line (#first s)
+        val lineId = fileOffset * maxLocPerFile + lineNumber
+        val counter = case IM.find (!lineNumberToCounter, lineId) of
                           NONE =>
                           (let
                               val newCounter = ref 0
                           in
-                              lineNumberToCounter := IM.insert (!lineNumberToCounter, fullLineNumber, newCounter);
+                              lineNumberToCounter := IM.insert (!lineNumberToCounter, lineId, newCounter);
                               newCounter
                           end)
                         | SOME c => c
-        val () = TextIO.print ("Hallo @" ^ #file s ^ " " ^ Int.toString (#line (#first s)) ^ "\n")
-        val () = if !counter = 10
-                 then raise Fail ("Named counter overflowing for " ^ #file s ^ " " ^ Int.toString (#line (#first s)))
-                 else ()
+        val currentCount = !counter
+        val () = counter := currentCount + 1
     in
-        counter
+        fileOffset * maxLocPerFile * maxNamedPerLine + lineNumber * maxNamedPerLine + currentCount
     end
 
 fun newNamed (s: ErrorMsg.span) =
     let
-        val namedCounter = getNamedCounter s
-        val r = !namedCounter
     in
-        namedCounter := r + 1;
-        r
+        freshNamed s
     end
 
 val empty = {
@@ -420,10 +419,8 @@ fun pushCNamedAs (env : env) x n k co =
 
 fun pushCNamed s env x k co =
     let
-        val namedCounter = getNamedCounter s
-        val n = !namedCounter
+        val n = freshNamed s
     in
-        namedCounter := n + 1;
         (pushCNamedAs env x n k co, n)
     end
 
@@ -955,10 +952,8 @@ fun pushENamedAs (env : env) x n t =
 
 fun pushENamed s env x t =
     let
-        val namedCounter = getNamedCounter s
-        val n = !namedCounter
+        val n = freshNamed s
     in
-        namedCounter := n + 1;
         (pushENamedAs env x n t, n)
     end
 
@@ -1001,10 +996,8 @@ fun pushSgnNamedAs (env : env) x n sgis =
 
 fun pushSgnNamed s env x sgis =
     let
-        val namedCounter = getNamedCounter s
-        val n = !namedCounter
+        val n = freshNamed s
     in
-        namedCounter := n + 1;
         (pushSgnNamedAs env x n sgis, n)
     end
 
@@ -1373,10 +1366,8 @@ and pushStrNamedAs env = pushStrNamedAs' true env
 
 fun pushStrNamed s env x sgn =
     let
-        val namedCounter = getNamedCounter s
-        val n = !namedCounter
+        val n = freshNamed s
     in
-        namedCounter := n + 1;
         (pushStrNamedAs env x n sgn, n)
     end
 
