@@ -89,6 +89,7 @@ type ('src, 'dst) transform = {
 val debug = ref false
 val dumpSource = ref false
 val doIflow = ref false
+val partialBuild = ref (NONE: string option)
 
 val doDumpSource = ref (fn () => ())
 
@@ -1230,8 +1231,13 @@ val parse = {
                                                 m fields
                                       end
 
-                      val ds = dsFfi @ ds
-                               @ [(Source.DExport final, loc)]
+                      val ds =
+                          case !partialBuild of
+                              NONE => dsFfi @ ds @ [(Source.DExport final, loc)]
+                            | SOME module => 
+                              dsFfi
+                              @ ds
+                              @ [(Source.DExport (Source.StrVar module, loc), loc)]
 
                       val ds = case database of
                                    NONE => ds
@@ -1283,7 +1289,7 @@ val elaborate = {
               in
                   Elaborate.elabFile basis (OS.FileSys.modTime basisF)
                                      topStr topSgn (if Time.< (tm1, tm2) then tm2 else tm1)
-                                     ElabEnv.empty file
+                                     ElabEnv.empty (fn env => env) file
               end,
     print = ElabPrint.p_file ElabEnv.empty
 }
