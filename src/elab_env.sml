@@ -243,10 +243,43 @@ fun dump (env : env) =
     (print "NamedC:\n";
      IM.appi (fn (n, (x, k, co)) => print (x ^ " [" ^ Int.toString n ^ "]\n")) (#namedC env))
 
-val namedCounter = ref 0
+val currentOffset: int ref = ref 0
+val filenameToLineNumberOffset: int SM.map ref = ref SM.empty
+val lineNumberToCounter: (int ref) IM.map ref = ref IM.empty
 
-fun newNamed () =
+fun getNamedCounter (s: ErrorMsg.span) = 
     let
+        val fullLineNumber = case SM.find (!filenameToLineNumberOffset, #file s) of
+                                 NONE =>
+                                 (let
+                                     val offset = !currentOffset
+                                 in
+                                     filenameToLineNumberOffset := SM.insert (!filenameToLineNumberOffset, #file s, offset);
+                                     currentOffset := offset + (2000 * 10); (* max 2k LOC per file... x 10 bindings per line *)
+                                     offset + #line (#first s)
+                                 end
+                                 )
+                               | SOME i => i + #line (#first s)
+        val counter = case IM.find (!lineNumberToCounter, fullLineNumber) of
+                          NONE =>
+                          (let
+                              val newCounter = ref 0
+                          in
+                              lineNumberToCounter := IM.insert (!lineNumberToCounter, fullLineNumber, newCounter);
+                              newCounter
+                          end)
+                        | SOME c => c
+        val () = TextIO.print ("Hallo @" ^ #file s ^ " " ^ Int.toString (#line (#first s)) ^ "\n")
+        val () = if !counter = 10
+                 then raise Fail ("Named counter overflowing for " ^ #file s ^ " " ^ Int.toString (#line (#first s)))
+                 else ()
+    in
+        counter
+    end
+
+fun newNamed (s: ErrorMsg.span) =
+    let
+        val namedCounter = getNamedCounter s
         val r = !namedCounter
     in
         namedCounter := r + 1;
@@ -385,8 +418,9 @@ fun pushCNamedAs (env : env) x n k co =
      renameStr = #renameStr env,
      str = #str env}
 
-fun pushCNamed env x k co =
+fun pushCNamed s env x k co =
     let
+        val namedCounter = getNamedCounter s
         val n = !namedCounter
     in
         namedCounter := n + 1;
@@ -919,8 +953,9 @@ fun pushENamedAs (env : env) x n t =
          str = #str env}
     end
 
-fun pushENamed env x t =
+fun pushENamed s env x t =
     let
+        val namedCounter = getNamedCounter s
         val n = !namedCounter
     in
         namedCounter := n + 1;
@@ -964,8 +999,9 @@ fun pushSgnNamedAs (env : env) x n sgis =
      renameStr = #renameStr env,
      str = #str env}
 
-fun pushSgnNamed env x sgis =
+fun pushSgnNamed s env x sgis =
     let
+        val namedCounter = getNamedCounter s
         val n = !namedCounter
     in
         namedCounter := n + 1;
@@ -1335,8 +1371,9 @@ and pushStrNamedAs' enrich (env : env) x n sgn =
 
 and pushStrNamedAs env = pushStrNamedAs' true env
 
-fun pushStrNamed env x sgn =
+fun pushStrNamed s env x sgn =
     let
+        val namedCounter = getNamedCounter s
         val n = !namedCounter
     in
         namedCounter := n + 1;

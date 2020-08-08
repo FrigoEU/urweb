@@ -2570,7 +2570,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
          let
              val k' = elabKind env k
 
-             val (env', n) = E.pushCNamed env x k' NONE
+             val (env', n) = E.pushCNamed loc env x k' NONE
          in
              ([(L'.SgiConAbs (x, n, k'), loc)], (env', denv, gs))
          end
@@ -2585,7 +2585,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
                            * us to resolve it fully. *)
 
              val (c', ck, gs') = elabCon (env, denv) c
-             val (env', n) = E.pushCNamed env x k' (SOME c')
+             val (env', n) = E.pushCNamed loc env x k' (SOME c')
          in
              checkKind env c' ck k';
 
@@ -2599,7 +2599,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
              val (dts, env) = ListUtil.foldlMap (fn ((x, xs, xcs), env) =>
                                                     let
                                                         val k' = foldl (fn (_, k') => (L'.KArrow (k, k'), loc)) k xs
-                                                        val (env, n) = E.pushCNamed env x k' NONE
+                                                        val (env, n) = E.pushCNamed loc env x k' NONE
                                                     in
                                                         ((x, n, xs, xcs), env)
                                                     end)
@@ -2636,7 +2636,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
                                                           val t = foldl (fn (x, t) => (L'.TCFun (L'.Implicit, x, k, t), loc))
                                                                         t xs
                                                                   
-                                                          val (env, n') = E.pushENamed env x t
+                                                          val (env, n') = E.pushENamed loc env x t
                                                       in
                                                           if SS.member (used, x) then
                                                               strError env (DuplicateConstructor (x, loc))
@@ -2679,7 +2679,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
                                val k' = foldl (fn (_, k') => (L'.KArrow (k, k'), loc)) k xs
 
                                val t = (L'.CModProj (n, ms, s), loc)
-                               val (env, n') = E.pushCNamed env x k' (SOME t)
+                               val (env, n') = E.pushCNamed loc env x k' (SOME t)
                                val env = E.pushDatatype env n' xs xncs
 
                                val t = (L'.CNamed n', loc)
@@ -2708,7 +2708,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
 
              val old = c'
              val c' = normClassConstraint env c'
-             val (env', n) = E.pushENamed env x c'
+             val (env', n) = E.pushENamed loc env x c'
          in
              (unifyKinds env ck ktype
               handle KUnify arg => strError env (NotType (loc, ck, arg)));
@@ -2725,7 +2725,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
              val visible = cunif env (loc, cstK)
 
              val x' = x ^ "_hidden_constraints"
-             val (env', hidden_n) = E.pushCNamed env x' cstK NONE
+             val (env', hidden_n) = E.pushCNamed loc env x' cstK NONE
              val hidden = (L'.CNamed hidden_n, loc)
 
              val uniques = (L'.CConcat (visible, hidden), loc)
@@ -2750,7 +2750,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
              val cst = (L'.CApp (cst, c'), loc)
              val cst = (L'.CApp (cst, visible), loc)
 
-             val (env', n) = E.pushENamed env' x ct
+             val (env', n) = E.pushENamed loc env' x ct
          in
              checkKind env c' ck (L'.KRecord (L'.KType, loc), loc);
              checkCon env' pe' pet pst;
@@ -2764,7 +2764,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
        | L.SgiStr (x, sgn) =>
          let
              val (sgn', gs') = elabSgn (env, denv) sgn
-             val (env', n) = E.pushStrNamed env x sgn'
+             val (env', n) = E.pushStrNamed loc env x sgn'
              val denv' = dopenConstraints (loc, env', denv) {str = x, strs = []}
          in
              ([(L'.SgiStr (L'.Import, x, n, sgn'), loc)], (env', denv', gs' @ gs))
@@ -2773,7 +2773,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
        | L.SgiSgn (x, sgn) =>
          let
              val (sgn', gs') = elabSgn (env, denv) sgn
-             val (env', n) = E.pushSgnNamed env x sgn'
+             val (env', n) = E.pushSgnNamed loc env x sgn'
          in
              ([(L'.SgiSgn (x, n, sgn'), loc)], (env', denv, gs' @ gs))
          end
@@ -2805,7 +2805,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
        | L.SgiClassAbs (x, k) =>
          let
              val k = elabKind env k
-             val (env, n) = E.pushCNamed env x k NONE
+             val (env, n) = E.pushCNamed loc env x k NONE
              val env = E.pushClass env n
          in
              ([(L'.SgiClassAbs (x, n, k), loc)], (env, denv, []))
@@ -2815,7 +2815,7 @@ fun elabSgn_item ((sgi, loc), (env, denv, gs)) =
          let
              val k = elabKind env k
              val (c', ck, gs) = elabCon (env, denv) c
-             val (env, n) = E.pushCNamed env x k (SOME c')
+             val (env, n) = E.pushCNamed loc env x k (SOME c')
              val env = E.pushClass env n
          in
              checkKind env c' ck k;
@@ -2918,7 +2918,7 @@ and elabSgn (env, denv) (sgn, loc) =
       | L.SgnFun (m, dom, ran) =>
         let
             val (dom', gs1) = elabSgn (env, denv) dom
-            val (env', n) = E.pushStrNamed env m dom'
+            val (env', n) = E.pushStrNamed loc env m dom'
             val denv' = dopenConstraints (loc, env', denv) {str = m, strs = []}
             val (ran', gs2) = elabSgn (env', denv') ran
         in
@@ -3952,7 +3952,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                | SOME k => elabKind env k
 
                     val (c', ck, gs') = elabCon (env, denv) c
-                    val (env', n) = E.pushCNamed env x k' (SOME c')
+                    val (env', n) = E.pushCNamed loc env x k' (SOME c')
                 in
                     checkKind env c' ck k';
 
@@ -3966,7 +3966,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                      (fn ((x, xs, xcs), env) =>
                                          let
                                              val k' = foldl (fn (_, k') => (L'.KArrow (k, k'), loc)) k xs
-                                             val (env, n) = E.pushCNamed env x k' NONE
+                                             val (env, n) = E.pushCNamed loc env x k' NONE
                                          in
                                              ((x, n, xs, xcs), env)
                                          end)
@@ -4000,7 +4000,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                                                                     end
                                                              val t = foldr (fn (x, t) => (L'.TCFun (L'.Implicit, x, k, t), loc)) t xs
 
-                                                             val (env, n') = E.pushENamed env x t
+                                                             val (env, n') = E.pushENamed loc env x t
                                                          in
                                                              if SS.member (used, x) then
                                                                  strError env (DuplicateConstructor (x, loc))
@@ -4042,7 +4042,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                       val k = (L'.KType, loc)
                                       val k' = foldl (fn (_, k') => (L'.KArrow (k, k'), loc)) k xs
                                       val t = (L'.CModProj (n, ms, s), loc)
-                                      val (env, n') = E.pushCNamed env x k' (SOME t)
+                                      val (env, n') = E.pushCNamed loc env x k' (SOME t)
                                       val env = E.pushDatatype env n' xs xncs
 
                                       val t = (L'.CNamed n', loc)
@@ -4096,13 +4096,13 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                     case singleVar p of
                         SOME x =>
                         let
-                            val (env', n) = E.pushENamed env x et
+                            val (env', n) = E.pushENamed loc env x et
                         in
                             ([(L'.DVal (x, n, c', e'), loc)], (env', denv, gs1 @ gs))
                         end
                       | NONE =>
                         let
-                            val (env', n) = E.pushENamed env "$tmp" et
+                            val (env', n) = E.pushENamed loc env "$tmp" et
                             val vars = SS.listItems bound
                             val (decls, env') =
                                 ListUtil.foldlMap (fn (x, env') =>
@@ -4110,7 +4110,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                                           val e = (L.ECase ((L.EVar ([], "$tmp", L.Infer), loc),
                                                                             [(p, (L.EVar ([], x, L.Infer), loc))]), loc)
                                                           val (e', t, _) = elabExp (env', denv) e
-                                                          val (env', n) = E.pushENamed env' x t
+                                                          val (env', n) = E.pushENamed loc env' x t
                                                       in
                                                           ((L'.DVal (x, n, t, e'), loc),
                                                            env')
@@ -4143,7 +4143,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
 
                     val (vis, env) = ListUtil.foldlMap (fn ((x, c', e), env) =>
                                                            let
-                                                               val (env, n) = E.pushENamed env x c'
+                                                               val (env, n) = E.pushENamed loc env x c'
                                                            in
                                                                ((x, n, c', e), env)
                                                            end) env vis
@@ -4169,7 +4169,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
               | L.DSgn (x, sgn) =>
                 let
                     val (sgn', gs') = enterSignature (fn () => elabSgn (env, denv) sgn)
-                    val (env', n) = E.pushSgnNamed env x sgn'
+                    val (env', n) = E.pushSgnNamed loc env x sgn'
                 in
                     ([(L'.DSgn (x, n, sgn'), loc)], (env', denv, enD gs' @ gs))
                 end
@@ -4212,7 +4212,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                                      (str', formal, enD gs1 @ gs2)
                                  end
 
-                         val (env', n) = E.pushStrNamed env x sgn'
+                         val (env', n) = E.pushStrNamed loc env x sgn'
 
                          val denv' =
                              case #1 str' of
@@ -4245,7 +4245,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                      let
                          val (sgn', gs') = enterSignature (fn () => elabSgn (env, denv) sgn)
                                            
-                         val (env', n) = E.pushStrNamed env x sgn'
+                         val (env', n) = E.pushStrNamed loc env x sgn'
 
                          val dNew = (L'.DFfiStr (x, n, sgn'), loc)
                      in
@@ -4377,7 +4377,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                             end
                           | _ => sgn
                 in
-                    ([(L'.DExport (E.newNamed (), sgn, str'), loc)], (env, denv, gs' @ gs))
+                    ([(L'.DExport (E.newNamed loc, sgn, str'), loc)], (env, denv, gs' @ gs))
                 end
 
               | L.DTable (x, c, pe, ce) =>
@@ -4392,7 +4392,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                     val ct = (L'.CApp (ct, c'), loc)
                     val ct = (L'.CApp (ct, (L'.CConcat (pkey, uniques), loc)), loc)
 
-                    val (env, n) = E.pushENamed env x ct
+                    val (env, n) = E.pushENamed loc env x ct
                     val (pe', pet, gs'') = elabExp (env, denv) pe
                     val (ce', cet, gs''') = elabExp (env, denv) ce
 
@@ -4412,7 +4412,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                 end
               | L.DSequence x =>
                 let
-                    val (env, n) = E.pushENamed env x (sequenceOf ())
+                    val (env, n) = E.pushENamed loc env x (sequenceOf ())
                 in
                     ([(L'.DSequence (!basis_r, x, n), loc)], (env, denv, gs))
                 end
@@ -4429,7 +4429,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
 
                     val cv = viewOf ()
                     val cv = (L'.CApp (cv, fs), loc)
-                    val (env', n) = E.pushENamed env x cv
+                    val (env', n) = E.pushENamed loc env x cv
 
                     val ct = queryOf ()
                     val ct = (L'.CApp (ct, (L'.CRecord ((L'.KRecord (L'.KType, loc), loc), []), loc)), loc)
@@ -4447,14 +4447,14 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
               | L.DCookie (x, c) =>
                 let
                     val (c', k, gs') = elabCon (env, denv) c
-                    val (env, n) = E.pushENamed env x (L'.CApp (cookieOf (), c'), loc)
+                    val (env, n) = E.pushENamed loc env x (L'.CApp (cookieOf (), c'), loc)
                 in
                     checkKind env c' k (L'.KType, loc);
                     ([(L'.DCookie (!basis_r, x, n, c'), loc)], (env, denv, enD gs' @ gs))
                 end
               | L.DStyle x =>
                 let
-                    val (env, n) = E.pushENamed env x (styleOf ())
+                    val (env, n) = E.pushENamed loc env x (styleOf ())
                 in
                     ([(L'.DStyle (!basis_r, x, n), loc)], (env, denv, gs))
                 end
@@ -4522,7 +4522,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
 
                     val (t', _, gs1) = elabCon (env, denv) t
                     val t' = normClassConstraint env t'
-                    val (env', n) = E.pushENamed env x t'
+                    val (env', n) = E.pushENamed loc env x t'
                 in
                     ([(L'.DFfi (x, n, modes, t'), loc)], (env', denv, enD gs1 @ gs))
                 end
@@ -4675,7 +4675,7 @@ and elabStr (env, denv) (str, loc) =
       | L.StrFun (m, dom, ranO, str) =>
         let
             val (dom', gs1) = elabSgn (env, denv) dom
-            val (env', n) = E.pushStrNamed env m dom'
+            val (env', n) = E.pushStrNamed loc env m dom'
             val denv' = dopenConstraints (loc, env', denv) {str = m, strs = []}
             val (str', actual, gs2) = elabStr (env', denv') str
 
@@ -4768,7 +4768,9 @@ fun elabFile basis basis_tm topStr topSgn top_tm env file =
             case (if !incremental then ModDb.lookup d else NONE) of
                 NONE =>
                 let
+                    val () = TextIO.print ("En nu ben ik 1")
                     val (sgn, gs) = elabSgn (env, D.empty) (L.SgnConst basis, ErrorMsg.dummySpan)
+                    val () = TextIO.print ("En nu ben ik 2")
                     val () = case gs of
                                  [] => ()
                                | _ => (app (fn (_, env, _, c1, c2) =>
@@ -4777,7 +4779,9 @@ fun elabFile basis basis_tm topStr topSgn top_tm env file =
                                                          ("c2", p_con env c2)]) gs;
                                        raise Fail "Unresolved disjointness constraints in Basis")
 
-                    val (env', basis_n) = E.pushStrNamed env "Basis" sgn
+                    val () = TextIO.print ("En nu ben ik 3")
+                    val (env', basis_n) = E.pushStrNamed {file = "Basis", first = ErrorMsg.dummyPos, last = ErrorMsg.dummyPos} env "Basis" sgn
+                    val () = TextIO.print ("En nu ben ik 4")
                 in
                     ModDb.insert ((L'.DFfiStr ("Basis", basis_n, sgn), ErrorMsg.dummySpan), basis_tm);
                     (basis_n, env', sgn)
@@ -4836,7 +4840,7 @@ fun elabFile basis basis_tm topStr topSgn top_tm env file =
 
                     val () = subSgn env' ErrorMsg.dummySpan topSgn' topSgn
 
-                    val (env', top_n) = E.pushStrNamed env' "Top" topSgn
+                    val (env', top_n) = E.pushStrNamed {file = "Top", first = ErrorMsg.dummyPos, last = ErrorMsg.dummyPos} env' "Top" topSgn
                 in
                     ModDb.insert ((L'.DStr ("Top", top_n, topSgn, topStr), ErrorMsg.dummySpan), top_tm);
                     (top_n, env', topSgn, topStr)

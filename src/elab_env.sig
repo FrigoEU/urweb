@@ -56,7 +56,7 @@ signature ELAB_ENV = sig
     val pushCRel : env -> string -> Elab.kind -> env
     val lookupCRel : env -> int -> string * Elab.kind
 
-    val pushCNamed : env -> string -> Elab.kind -> Elab.con option -> env * int
+    val pushCNamed : ErrorMsg.span -> env -> string -> Elab.kind -> Elab.con option -> env * int
     val pushCNamedAs : env -> string -> int -> Elab.kind -> Elab.con option -> env
     val lookupCNamed : env -> int -> string * Elab.kind * Elab.con option
 
@@ -81,20 +81,20 @@ signature ELAB_ENV = sig
     val pushERel : env -> string -> Elab.con -> env
     val lookupERel : env -> int -> string * Elab.con
 
-    val pushENamed : env -> string -> Elab.con -> env * int
+    val pushENamed : ErrorMsg.span -> env -> string -> Elab.con -> env * int
     val pushENamedAs : env -> string -> int -> Elab.con -> env
     val lookupENamed : env -> int -> string * Elab.con
     val checkENamed : env -> int -> bool
 
     val lookupE : env -> string -> Elab.con var
 
-    val pushSgnNamed : env -> string -> Elab.sgn -> env * int
+    val pushSgnNamed : ErrorMsg.span -> env -> string -> Elab.sgn -> env * int
     val pushSgnNamedAs : env -> string -> int -> Elab.sgn -> env
     val lookupSgnNamed : env -> int -> string * Elab.sgn
 
     val lookupSgn : env -> string -> (int * Elab.sgn) option
 
-    val pushStrNamed : env -> string -> Elab.sgn -> env * int
+    val pushStrNamed : ErrorMsg.span -> env -> string -> Elab.sgn -> env * int
     val pushStrNamedAs : env -> string -> int -> Elab.sgn -> env
     val pushStrNamedAs' : bool (* also enrich typeclass instances? *) -> env -> string -> int -> Elab.sgn -> env
     val lookupStrNamed : env -> int -> string * Elab.sgn
@@ -117,7 +117,7 @@ signature ELAB_ENV = sig
     val projectStr : env -> { sgn : Elab.sgn, str : Elab.str, field : string } -> Elab.sgn option
     val projectConstraints : env -> { sgn : Elab.sgn, str : Elab.str } -> (Elab.con * Elab.con) list option
 
-    val newNamed : unit -> int
+    val newNamed : ErrorMsg.span -> int
 
     val chaseMpath : env -> (int * string list) -> Elab.str * Elab.sgn
 
