@@ -956,8 +956,8 @@ fun compareType (old: typ) (new: typ): bool =
             (fn (oldF, newF) => #1 oldF = #1 newF andalso compareType (#2 oldF) (#2 newF))
             (oldFields, newFields)
       | (TDatatype (oldI, _), TDatatype (newI, _)) =>
-        trace
-            ("TDatatype: " ^ Int.toString oldI ^ " - " ^ Int.toString newI)
+        (* trace *)
+        (*     ("TDatatype: " ^ Int.toString oldI ^ " - " ^ Int.toString newI) *)
             (oldI = newI)
       | (TFfi (oldStr1, oldStr2), TFfi (newStr1, newStr2)) =>
         oldStr1 = newStr1 andalso oldStr2 = newStr2
@@ -977,18 +977,18 @@ fun compareCachedVal (old: exp) (new: exp): bool =
           | (ERel oldN, ERel newN) =>
             (* We're only caching top-level decl's, so Rel's will always have the same sequence numbers across runs. *)
             (* We're also comparing the function bodies, so if Rel's have the same seq number they are the same variable in the same function *)
-            trace
-                ("Rel: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+            (* trace *)
+            (*     ("Rel: " ^ Int.toString oldN ^ " - " ^ Int.toString newN) *)
                 (oldN = newN)
           | (ENamed oldN, ENamed newN) =>
             (* Check if referenced named bindings are the same *)
-            trace
-                ("Named = " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+            (* trace *)
+            (*     ("Named = " ^ Int.toString oldN ^ " - " ^ Int.toString newN) *)
                 (oldN = newN)
           | (ECon (_, PConVar oldN, oldEo), ECon (_, PConVar newN, newEo)) =>
             (* Check if referenced datatype constructors are the same *)
-            trace
-                ("Con with PConVar: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
+            (* trace *)
+            (*     ("Con with PConVar: " ^ Int.toString oldN ^ " - " ^ Int.toString newN) *)
                 (oldN = newN
                  andalso
                  (* Check if expressions inside are the same *)
@@ -999,10 +999,10 @@ fun compareCachedVal (old: exp) (new: exp): bool =
                     | _ => false))
           | (ECon (_, PConFfi oldFfi, oldEo), ECon (_, PConFfi newFfi, newEo)) =>
             (* Check if referenced FFI constructor names are the same *)
-            trace
-                ("Con with PConFfi: "
-                 ^ #mod oldFfi ^ "/" ^ #datatyp oldFfi ^ "." ^ #con oldFfi ^ " - "
-                 ^ #mod newFfi ^ "/" ^ #datatyp newFfi ^ "." ^ #con newFfi)
+            (* trace *)
+            (*     ("Con with PConFfi: " *)
+            (*      ^ #mod oldFfi ^ "/" ^ #datatyp oldFfi ^ "." ^ #con oldFfi ^ " - " *)
+            (*      ^ #mod newFfi ^ "/" ^ #datatyp newFfi ^ "." ^ #con newFfi) *)
                 (#mod oldFfi = #mod newFfi
                  andalso #datatyp oldFfi = #datatyp newFfi
                  andalso #con oldFfi = #con newFfi
@@ -1203,7 +1203,6 @@ fun reduce (file: file) (optim: bool) =
             else
             (* Walking over all decls in file:
              * * If Vals or ValRecs are the same as previously, and their deps are, use the optimized version instead
-             * * Save mappings between sequence numbers (for Named bindings and datatype bindings) if they're the same, these are used in the comparisons
              *)
             List.foldl
                 (fn (decl, decls: decl list) =>

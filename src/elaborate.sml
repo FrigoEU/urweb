@@ -4187,6 +4187,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                    | NONE =>
                      let
                          val () = if !verbose then TextIO.print ("CHECK: " ^ x ^ "\n") else ()
+                         val () = E.resetNamed (#file loc)
                          val () = ErrorMsg.startElabStructure x
 
                          val () = if x = "Basis" then

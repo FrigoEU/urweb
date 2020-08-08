@@ -108,9 +108,9 @@ fun findInStr (f: ElabEnv.env -> item (* curr *) -> item (* prev *) -> bool)
                                   | U.Decl.RelC (x, k) => E.pushCRel env x k
                                   | U.Decl.NamedC (x, n, k, co) => E.pushCNamedAs env x n k co
                                   | U.Decl.RelE (x, c) => E.pushERel env x c
-                                  | U.Decl.NamedE (x, c) => #1 (E.pushENamed env x c)
-                                  | U.Decl.Str (x, n, sgn) => #1 (E.pushStrNamed env x sgn)
-                                  | U.Decl.Sgn (x, n, sgn) => #1 (E.pushSgnNamed env x sgn)
+                                  | U.Decl.NamedE (x, c) => #1 (E.pushENamed ErrorMsg.dummySpan env x c)
+                                  | U.Decl.Str (x, n, sgn) => E.pushStrNamedAs env x n sgn
+                                  | U.Decl.Sgn (x, n, sgn) => E.pushSgnNamedAs env x n sgn
                     }
                     env dummyResult d
     in

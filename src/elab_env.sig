@@ -49,6 +49,8 @@ signature ELAB_ENV = sig
            | Rel of int * 'a
            | Named of int * 'a
 
+    val resetNamed : string -> unit
+                                
     val pushKRel : env -> string -> env
     val lookupKRel : env -> int -> string
     val lookupK : env -> string -> int option

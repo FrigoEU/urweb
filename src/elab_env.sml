@@ -247,6 +247,18 @@ val currentOffset: int ref = ref 0
 val filenameToLineNumberOffset: int SM.map ref = ref SM.empty
 val lineNumberToCounter: (int ref) IM.map ref = ref IM.empty
 
+val maxLocPerFile = 10000
+val maxNamedPerLine = 100
+fun resetNamed (filename: string) =
+    case SM.find (!filenameToLineNumberOffset, filename) of
+        NONE => ()
+      | SOME i =>
+        let
+            val rangeToDelete = (i * maxLocPerFile, (i + 1) * maxLocPerFile - 1)
+        in
+            lineNumberToCounter := IM.filteri (fn (linenum, _) => linenum < #1 rangeToDelete orelse linenum > #2 rangeToDelete) (!lineNumberToCounter)
+        end
+
 fun freshNamed (s: ErrorMsg.span): int = 
     let
         val fileOffset = case SM.find (!filenameToLineNumberOffset, #file s) of
@@ -260,9 +272,10 @@ fun freshNamed (s: ErrorMsg.span): int =
                              end
                              )
                            | SOME i => i
-        val maxLocPerFile = 2000
-        val maxNamedPerLine = 10
         val lineNumber = #line (#first s)
+        val () = if lineNumber = maxLocPerFile
+                 then raise Fail ("Max LoC per line reached: " ^ #file s)
+                 else ()
         val lineId = fileOffset * maxLocPerFile + lineNumber
         val counter = case IM.find (!lineNumberToCounter, lineId) of
                           NONE =>
@@ -274,6 +287,9 @@ fun freshNamed (s: ErrorMsg.span): int =
                           end)
                         | SOME c => c
         val currentCount = !counter
+        val () = if currentCount = maxNamedPerLine
+                 then raise Fail ("Max named per line reached: " ^ #file s ^ " ,line " ^ Int.toString lineNumber)
+                 else ()
         val () = counter := currentCount + 1
     in
         fileOffset * maxLocPerFile * maxNamedPerLine + lineNumber * maxNamedPerLine + currentCount
