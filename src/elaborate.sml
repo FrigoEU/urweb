@@ -4187,7 +4187,7 @@ and elabDecl (dAll as (d, loc), (env, denv, gs)) =
                    | NONE =>
                      let
                          val () = if !verbose then TextIO.print ("CHECK: " ^ x ^ "\n") else ()
-                         val () = E.resetNamed (#file loc)
+                         val () = E.resetNamed (#file (#2 str)) (#2 str)
                          val () = ErrorMsg.startElabStructure x
 
                          val () = if x = "Basis" then
@@ -4765,6 +4765,7 @@ fun elabFile basis basis_tm topStr topSgn top_tm env changeEnv file =
     let
         val () = ModDb.snapshot ()
         val () = ErrorMsg.resetStructureTracker ()
+        (* val () = E.resetAll () *)
 
 
         val () = mayDelay := true

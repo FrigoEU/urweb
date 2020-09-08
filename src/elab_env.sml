@@ -249,12 +249,18 @@ val lineNumberToCounter: (int ref) IM.map ref = ref IM.empty
 
 val maxLocPerFile = 10000
 val maxNamedPerLine = 100
-fun resetNamed (filename: string) =
+fun resetAll () =
+    (currentOffset := 0 ;
+     filenameToLineNumberOffset := SM.empty;
+     lineNumberToCounter := IM.empty
+    )
+
+fun resetNamed (filename: string) (sp: ErrorMsg.span) =
     case SM.find (!filenameToLineNumberOffset, filename) of
         NONE => ()
       | SOME i =>
         let
-            val rangeToDelete = (i * maxLocPerFile, (i + 1) * maxLocPerFile - 1)
+            val rangeToDelete = ((i * maxLocPerFile) + (#line (#first sp)), (i * maxLocPerFile) + (#line (#last sp)))
         in
             lineNumberToCounter := IM.filteri (fn (linenum, _) => linenum < #1 rangeToDelete orelse linenum > #2 rangeToDelete) (!lineNumberToCounter)
         end

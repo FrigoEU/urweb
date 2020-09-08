@@ -940,7 +940,7 @@ fun doReduce file =
             file'
     end
 
-val printDebug = ref false
+val printDebug = ref true
 fun setPrintDebug b =
     printDebug := b
 fun trace (phase: string) (b: bool): bool =
@@ -977,13 +977,13 @@ fun compareCachedVal (old: exp) (new: exp): bool =
           | (ERel oldN, ERel newN) =>
             (* We're only caching top-level decl's, so Rel's will always have the same sequence numbers across runs. *)
             (* We're also comparing the function bodies, so if Rel's have the same seq number they are the same variable in the same function *)
-            (* trace *)
-            (*     ("Rel: " ^ Int.toString oldN ^ " - " ^ Int.toString newN) *)
+            trace
+                ("Rel: " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
                 (oldN = newN)
           | (ENamed oldN, ENamed newN) =>
             (* Check if referenced named bindings are the same *)
-            (* trace *)
-            (*     ("Named = " ^ Int.toString oldN ^ " - " ^ Int.toString newN) *)
+            trace
+                ("Named = " ^ Int.toString oldN ^ " - " ^ Int.toString newN)
                 (oldN = newN)
           | (ECon (_, PConVar oldN, oldEo), ECon (_, PConVar newN, newEo)) =>
             (* Check if referenced datatype constructors are the same *)
@@ -1212,7 +1212,9 @@ fun reduce (file: file) (optim: bool) =
                             val () = debug ("DVal " ^ Int.toString i ^ " " ^ name ^ ". ") ()
                             (* val () = Print.preface ((name ^" :: "), (MonoPrint.p_typ E.empty t)) *)
                             (* val () = TextIO.flushOut TextIO.stdOut *)
+                            val () = debug ("prevVals length: " ^ Int.toString (List.length prevVals)) ()
                             val foundByName = List.filter (fn v => #name v = name andalso #fullname v = fullname) prevVals (* names are not always unique, sometimes blank (?) => filter *)
+                            val () = debug ("foundByName length: " ^ Int.toString (List.length foundByName)) ()
                             val foundByComparison = List.filter (fn v => compareCachedVal (#orig v) e
                                                                          andalso compareType (#typ v) t)
                                                                 foundByName
@@ -1221,7 +1223,7 @@ fun reduce (file: file) (optim: bool) =
                                 [] => (debug ("  No hit.\n") (decl :: decls))
                               | cacheds => 
                                 let
-                                    val () = debug "\n  Hit. Mapping: " ()
+                                    val () = debug "\n  Hit." ()
                                     val () = debug "\n" ()
                                 in
                                     ( (DVal (name, i, t, #optim (List.hd cacheds), fullname), #2 decl) :: decls)
@@ -1250,7 +1252,6 @@ fun reduce (file: file) (optim: bool) =
                              | cacheds => 
                                let
                                    val () = debug "\n  Hit. " ()
-                                   val () = debug "RecVal mapping: " ()
                                    val () = debug "\n" ()
                                in
                                    ( ( DValRec (ListPair.map (fn ((x, i, t, _, n), cached) =>
@@ -1311,6 +1312,9 @@ fun reduce (file: file) (optim: bool) =
                                                     (accvals, accrecvals, (List.map (fn (name, i, cons) => {name = name, seqNum = i, constructors = cons}) ds) :: accdatatypes)
                                                   | _ => (accvals, accrecvals, accdatatypes)
                                             ) ([], [], []) (#1 file, #1 res)
+                         val () = debug ("vals length: " ^ Int.toString (List.length vals) ^ "\n") ()
+                         val () = debug ("valRecs length: " ^ Int.toString (List.length valRecs) ^ "\n") ()
+                         val () = debug ("datatypes length: " ^ Int.toString (List.length datatypes) ^ "\n") ()
                          val () = cachedVals := vals
                          val () = cachedValRecs := valRecs
                          val () = cachedDatatypes := datatypes
