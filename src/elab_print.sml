@@ -396,12 +396,13 @@ fun p_exp' par env  (e, _) =
                     | e => (e, loc)
               val tag = getTag tag
           in
-              PD.box (PPS.Abs 0, [ PD.box (PPS.Abs 0, [PD.string "<", p_exp env tag, space, p_con env (CRecord attrsGivenType, ErrorMsg.dummySpan), PD.string ">"])
-                                 , PD.cut
-                                 , PD.box (PPS.Rel 2, [p_exp env contents])
-                                 , PD.cut
-                                 , PD.box (PPS.Abs 0, [PD.string "</", p_exp env tag, PD.string ">"])
-                      ])
+              PD.vBox (PPS.Abs 0, [ PD.box (PPS.Abs 0, [PD.string "<", p_exp env tag, PD.string " ", p_con env (CRecord attrsGivenType, ErrorMsg.dummySpan), PD.string ">"])
+                                  , PD.break { nsp = 2, offset = 2 }
+                                  , PD.box (PPS.Rel 0, [p_exp env contents])
+                                  , PD.cut
+                                  , PD.box (PPS.Abs 0, [PD.string "</", p_exp env tag, PD.string ">"])
+                                  , PD.cut
+                        ])
           end
       | EApp
             ( (EApp
@@ -509,14 +510,20 @@ fun p_exp' par env  (e, _) =
                     | _ => NONE
               fun curliesifnot b p = if b then [p] else [PD.string "{", p, PD.string "}"]
           in
-              PD.box (PPS.Abs 0,
+              PD.box ( PPS.Abs 0,
                       List.concat
                           [ case getcdatastr left of
                                 NONE => curliesifnot (isjoin left orelse istag left)  (p_exp env left)
-                              | SOME str => [PD.string (trim str), PD.cut]
+                              | SOME cdata =>
+                                if trim cdata = ""
+                                then []
+                                else [PD.string (trim cdata), PD.cut]
                           , case getcdatastr right of
                                 NONE => curliesifnot (isjoin right orelse istag left)  (p_exp env right)
-                              | SOME str => [PD.string (trim str), PD.cut]
+                              | SOME cdata =>
+                                if trim cdata = ""
+                                then []
+                                else [PD.string (trim cdata), PD.cut]
                      ])
           end
 
