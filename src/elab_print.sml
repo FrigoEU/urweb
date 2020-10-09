@@ -314,7 +314,11 @@ fun p_pat' par env (p, _) =
 
 and p_pat x = p_pat' false x
 
-fun p_exp' par env  (e, _) =
+fun trimleft str = String.implode (#2 (List.partition Char.isSpace (String.explode str)))
+fun trimright str = String.implode (List.rev (#2 (List.partition Char.isSpace (List.rev (String.explode str)))))
+fun trim str = trimleft (trimright str)
+
+fun p_exp' par env (e, loc) =
     case e of
         EPrim p => Prim.p_t p
       | ERel n =>
@@ -387,23 +391,8 @@ fun p_exp' par env  (e, _) =
                    ), _)
             , contents
             )
-        =>
-          let
-              fun getTag (e, loc) =
-                  case e of
-                      ECApp (e, _) => getTag e
-                    | EApp (e, _) => getTag e
-                    | e => (e, loc)
-              val tag = getTag tag
-          in
-              PD.vBox (PPS.Abs 0, [ PD.box (PPS.Abs 0, [PD.string "<", p_exp env tag, PD.string " ", p_con env (CRecord attrsGivenType, ErrorMsg.dummySpan), PD.string ">"])
-                                  , PD.break { nsp = 2, offset = 2 }
-                                  , PD.box (PPS.Rel 0, [p_exp env contents])
-                                  , PD.cut
-                                  , PD.box (PPS.Abs 0, [PD.string "</", p_exp env tag, PD.string ">"])
-                                  , PD.cut
-                        ])
-          end
+        => wrapWithXml env (e, loc)
+
       | EApp
             ( (EApp
                    ( (ECApp
@@ -422,110 +411,7 @@ fun p_exp' par env  (e, _) =
                    ), _)
             , right
             )
-        =>
-          let
-              fun trimleft str = String.implode (#2 (List.partition Char.isSpace (String.explode str)))
-              fun trimright str = String.implode (List.rev (#2 (List.partition Char.isSpace (List.rev (String.explode str)))))
-              fun trim str = trimleft (trimright str)
-              fun istag  (e, _) = 
-                  case e of
-                      EApp
-                          ( (EApp
-                                 ( (EApp
-                                        ( (EApp
-                                               ( (EApp
-                                                      ( (EApp
-                                                             ( (EApp
-                                                                    ( (ECApp
-                                                                           ( (ECApp
-                                                                                  ( (ECApp
-                                                                                         ( (ECApp
-                                                                                                ( (ECApp
-                                                                                                       ( (ECApp
-                                                                                                              ( (ECApp
-                                                                                                                     ( (ECApp
-                                                                                                                            ( (EModProj (_, _, "tag"), _) (* TODO check if module = Basis? *)
-                                                                                                                            , (CRecord attrsGivenType, _)) , _)
-                                                                                                                     , (CRecord _, _) (* attrsAbsent *)
-                                                                                                                     ), _)
-                                                                                                              , (CRecord _, _) (* outer context *)
-                                                                                                              ), _)
-                                                                                                       , (CRecord _, _) (* inner context *)
-                                                                                                       ), _)
-                                                                                                , (CRecord _, _) (* use outer *)
-                                                                                                ), _)
-                                                                                         , _ (* use inner (?) *)
-                                                                                         ), _ )
-                                                                                  , (CRecord _, _) (* bindOuter *)
-                                                                                  ), _)
-                                                                           , (CRecord _, _) (* bindInner *)
-                                                                           ), _)
-                                                                    , class
-                                                                    ), _)
-                                                             , dynClass
-                                                             ), _)
-                                                      , style
-                                                      ), _)
-                                               , dynStyle
-                                               ), _)
-                                        , (ERecord attrsGiven, _)
-                                        ), _)
-                                 , tag (* tag *)
-                                 ), _)
-                          , contents
-                          ) => true
-                   | _ => false
-              fun isjoin (e, _) =
-                  case e of
-                      EApp
-                          ( (EApp
-                                 ( (ECApp
-                                        ( (ECApp
-                                               ( (ECApp
-                                                      ( (ECApp
-                                                             ( (EModProj (_, _, "join"), _) (* TODO check if module = Basis? *)
-                                                             , (CRecord _, _)) , _) (* ctx *)
-                                                      , _ (* use1 *)
-                                                      ), _)
-                                               , (CRecord _, _) (* bind1 *)
-                                               ), _)
-                                        , (CRecord _, _) (* bind2 *)
-                                        ), _)
-                                 , left
-                                 ), _)
-                          , right
-                          ) => true
-                    | _ => false
-              fun getcdatastr (e, _) =
-                  case e of
-                      EApp
-                          ( (ECApp
-                                 ( (ECApp
-                                        ( (EModProj (_, _, "cdata"), _) (* TODO check if module = Basis? *)
-                                        , (CRecord _, _)) , _) (* ctx *)
-                                 , _ (* use1 *)
-                                 ), _)
-                          , (EPrim (Prim.String (_, str)), _)
-                          ) => SOME str
-                    | _ => NONE
-              fun curliesifnot b p = if b then [p] else [PD.string "{", p, PD.string "}"]
-          in
-              PD.box ( PPS.Abs 0,
-                      List.concat
-                          [ case getcdatastr left of
-                                NONE => curliesifnot (isjoin left orelse istag left)  (p_exp env left)
-                              | SOME cdata =>
-                                if trim cdata = ""
-                                then []
-                                else [PD.string (trim cdata), PD.cut]
-                          , case getcdatastr right of
-                                NONE => curliesifnot (isjoin right orelse istag left)  (p_exp env right)
-                              | SOME cdata =>
-                                if trim cdata = ""
-                                then []
-                                else [PD.string (trim cdata), PD.cut]
-                     ])
-          end
+        => wrapWithXml env (e, loc)
 
       | EApp
             ( (ECApp
@@ -536,8 +422,24 @@ fun p_exp' par env  (e, _) =
                    ), _)
             , (EPrim (Prim.String (_, str)), _)
             )
-        =>
-          PD.box (PPS.Abs 0, [PD.string ("<xml>"^ str ^"</xml>")])
+        => wrapWithXml env (e, loc)
+
+      | EApp
+            ( (EApp
+                   ( (ECApp
+                          ( (ECApp
+                                 ( (ECApp ( (EModProj (_, _, "txt"), _)
+                                          , _ (* t *)
+                                          ), _)
+                                 , _ (* ctx *)
+                                 ), _)
+                          , _ (* use *)
+                          ), _)
+                   , _ (* show t *)
+                   ), _)
+            , t
+            )
+        => wrapWithXml env (e, loc)
 
       | EApp (e1, e2) => parenIf par (box [p_exp env e1,
                                            space,
@@ -703,6 +605,181 @@ fun p_exp' par env  (e, _) =
 
 and p_exp env = p_exp' false env 
 
+and wrapWithXml env e =
+    PD.vBox (PPS.Abs 0, List.concat
+                            [ [ PD.box (PPS.Abs 0, [PD.string "<xml>"])]
+                            , if isEmptyCdata e
+                              then []
+                              else [ PD.break {nsp = 2, offset = 2}
+                                   , PD.box (PPS.Rel 0, [p_exp_xml env e])
+                                   , PD.cut]
+                            , [ PD.box (PPS.Abs 0, [PD.string "</xml>"])
+                              , PD.cut]
+            ])
+
+and p_exp_xml env (eAll as (e, loc)) =
+    case e of
+        EApp
+            ( (EApp
+                   ( (EApp
+                          ( (EApp
+                                 ( (EApp
+                                        ( (EApp
+                                               ( (EApp
+                                                      ( (ECApp
+                                                             ( (ECApp
+                                                                    ( (ECApp
+                                                                           ( (ECApp
+                                                                                  ( (ECApp
+                                                                                         ( (ECApp
+                                                                                                ( (ECApp
+                                                                                                       ( (ECApp
+                                                                                                              ( (EModProj (_, _, "tag"), _) (* TODO check if module = Basis? *)
+                                                                                                              , (CRecord attrsGivenType, _)) , _)
+                                                                                                       , (CRecord _, _) (* attrsAbsent *)
+                                                                                                       ), _)
+                                                                                                , (CRecord _, _) (* outer context *)
+                                                                                                ), _)
+                                                                                         , (CRecord _, _) (* inner context *)
+                                                                                         ), _)
+                                                                                  , (CRecord _, _) (* use outer *)
+                                                                                  ), _)
+                                                                           , _ (* use inner (?) *)
+                                                                           ), _ )
+                                                                    , (CRecord _, _) (* bindOuter *)
+                                                                    ), _)
+                                                             , (CRecord _, _) (* bindInner *)
+                                                             ), _)
+                                                      , class
+                                                      ), _)
+                                               , dynClass
+                                               ), _)
+                                        , style
+                                        ), _)
+                                 , dynStyle
+                                 ), _)
+                          , (ERecord attrsGiven, _)
+                          ), _)
+                   , tag (* tag *)
+                   ), _)
+            , contents
+            )
+        =>
+          let
+              fun getTag (e, loc) =
+                  case e of
+                      ECApp (e, _) => getTag e
+                    | EApp (e, _) => getTag e
+                    | e => (e, loc)
+              val tag = getTag tag
+          in
+              PD.vBox (PPS.Abs 0,
+                       List.concat
+                           [ [PD.box (PPS.Abs 0, [PD.string "<", p_exp env tag, PD.string " ", p_con env (CRecord attrsGivenType, ErrorMsg.dummySpan), PD.string ">"])]
+                           , if isEmptyCdata contents
+                             then []
+                             else [ PD.break {nsp = 2, offset = 2}
+                                  , PD.box (PPS.Rel 0, [p_exp_xml env contents])
+                                  , PD.cut]
+                           , [ PD.box (PPS.Abs 0, [PD.string "</", p_exp env tag, PD.string ">"])
+                             ]
+                      ])
+          end
+
+      | EApp
+            ( (EApp
+                   ( (ECApp
+                          ( (ECApp
+                                 ( (ECApp
+                                        ( (ECApp
+                                               ( (EModProj (_, _, "join"), _) (* TODO check if module = Basis? *)
+                                               , (CRecord _, _)) , _) (* ctx *)
+                                        , _ (* use1 *)
+                                        ), _)
+                                 , (CRecord _, _) (* bind1 *)
+                                 ), _)
+                          , (CRecord _, _) (* bind2 *)
+                          ), _)
+                   , left
+                   ), _)
+            , right
+            )
+        =>
+          PD.box ( PPS.Abs 0, [ p_exp_xml env left
+                              , if not (isEmptyCdata left) andalso not (isEmptyCdata right)
+                                then PD.cut
+                                else PD.string ""
+                              , p_exp_xml env right])
+
+      | EApp
+            ( (ECApp
+                   ( (ECApp
+                          ( (EModProj (_, _, "cdata"), _) (* TODO check if module = Basis? *)
+                          , (CRecord _, _)) , _) (* ctx *)
+                   , _ (* use1 *)
+                   ), _)
+            , (EPrim (Prim.String (_, str)), _)
+            )
+        => PD.string (trim str)
+      | EApp
+            ( (EApp
+                   ( (ECApp
+                          ( (ECApp
+                                 ( (ECApp ( (EModProj (_, _, "txt"), _)
+                                          , _ (* t *)
+                                          ), _)
+                                 , _ (* ctx *)
+                                 ), _)
+                          , _ (* use *)
+                          ), _)
+                   , _ (* show t *)
+                   ), _)
+            , t
+            ) => PD.box (PPS.Abs 0, [ PD.string "{["
+                                    , p_exp env t
+                                    , PD.string "]}"
+                                    ])
+
+      | _ => PD.box (PPS.Abs 0, [ PD.string "{"
+                                , p_exp env eAll
+                                , PD.string "}"
+                    ])
+
+and isEmptyCdata (e, _) =
+    case e of
+        EApp
+            ( (EApp
+                   ( (ECApp
+                          ( (ECApp
+                                 ( (ECApp
+                                        ( (ECApp
+                                               ( (EModProj (_, _, "join"), _) (* TODO check if module = Basis? *)
+                                               , (CRecord _, _)) , _) (* ctx *)
+                                        , _ (* use1 *)
+                                        ), _)
+                                 , (CRecord _, _) (* bind1 *)
+                                 ), _)
+                          , (CRecord _, _) (* bind2 *)
+                          ), _)
+                   , left
+                   ), _)
+            , right
+            )
+        => isEmptyCdata left andalso isEmptyCdata right
+
+      | EApp
+            ( (ECApp
+                   ( (ECApp
+                          ( (EModProj (_, _, "cdata"), _) (* TODO check if module = Basis? *)
+                          , (CRecord _, _)) , _) (* ctx *)
+                   , _ (* use1 *)
+                   ), _)
+            , (EPrim (Prim.String (_, str)), _)
+            )
+        => trim str = ""
+
+      | _ => false
+    
 and p_edecl env (dAll as (d, _)) =
     case d of
         EDVal (p, t, e) => box [string "val",
