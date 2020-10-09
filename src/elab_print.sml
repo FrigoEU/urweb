@@ -342,6 +342,112 @@ fun p_exp' par env (e, _) =
             p_list_sep (string ".") string (m1x :: ms @ [x])
         end
                                          
+      | EApp
+            ( (EApp
+                   ( (EApp
+                          ( (EApp
+                                 ( (EApp
+                                        ( (EApp
+                                               ( (EApp
+                                                      ( (ECApp
+                                                             ( (ECApp
+                                                                    ( (ECApp
+                                                                           ( (ECApp
+                                                                                  ( (ECApp
+                                                                                         ( (ECApp
+                                                                                                ( (ECApp
+                                                                                                       ( (ECApp
+                                                                                                              ( (EModProj (_, _, "tag"), _) (* TODO check if module = Basis? *)
+                                                                                                              , (CRecord attrsGivenType, _)) , _)
+                                                                                                       , (CRecord _, _) (* attrsAbsent *)
+                                                                                                       ), _)
+                                                                                                , (CRecord _, _) (* outer context *)
+                                                                                                ), _)
+                                                                                         , (CRecord _, _) (* inner context *)
+                                                                                         ), _)
+                                                                                  , (CRecord _, _) (* use outer *)
+                                                                                  ), _)
+                                                                           , _ (* use inner (?) *)
+                                                                           ), _ )
+                                                                    , (CRecord _, _) (* bindOuter *)
+                                                                    ), _)
+                                                             , (CRecord _, _) (* bindInner *)
+                                                             ), _)
+                                                      , class
+                                                      ), _)
+                                               , dynClass
+                                               ), _)
+                                        , style
+                                        ), _)
+                                 , dynStyle
+                                 ), _)
+                          , (ERecord attrsGiven, _)
+                          ), _)
+                   , tag (* tag *)
+                   ), _)
+            , contents
+            )
+        =>
+          let
+              fun getTag (e, loc) =
+                  case e of
+                      ECApp (e, _) => getTag e
+                    | EApp (e, _) => getTag e
+                    | e => (e, loc)
+              val tag = getTag tag
+          in
+              PD.box (PPS.Abs 0, [ PD.box (PPS.Abs 0, [PD.string "<", p_exp env tag, space, p_exp env (ERecord attrsGiven, ErrorMsg.dummySpan), PD.string ">"])
+                                 , PD.cut
+                                 , PD.box (PPS.Rel 2, [p_exp env contents])
+                                 , PD.cut
+                                 , PD.box (PPS.Abs 0, [PD.string "</", p_exp env tag, PD.string ">"])
+                      ])
+          end
+      | EApp
+            ( (EApp
+                   ( (ECApp
+                          ( (ECApp
+                                 ( (ECApp
+                                        ( (ECApp
+                                               ( (EModProj (_, _, "join"), _) (* TODO check if module = Basis? *)
+                                               , (CRecord _, _)) , _) (* ctx *)
+                                        , _ (* use1 *)
+                                        ), _)
+                                 , (CRecord _, _) (* bind1 *)
+                                 ), _)
+                          , (CRecord _, _) (* bind2 *)
+                          ), _)
+                   , left
+                   ), _)
+            , right
+            )
+        => PD.box (PPS.Abs 0, [ p_exp env left
+                              , p_exp env right
+                  ])
+
+      | EApp
+            ( (ECApp
+                   ( (ECApp
+                          ( (EModProj (_, _, "cdata"), _) (* TODO check if module = Basis? *)
+                          , (CRecord _, _)) , _) (* ctx *)
+                   , _ (* use1 *)
+                   ), _)
+            , (EPrim (Prim.String (_, str)), _)
+            )
+        =>
+          let
+              fun trimleft str = String.implode (#2 (List.partition Char.isSpace (String.explode str)))
+              fun trimright str = String.implode (List.rev (#2 (List.partition Char.isSpace (List.rev (String.explode str)))))
+              fun trim str = trimleft (trimright str)
+          in
+              if trim str = ""
+              then PD.space 0
+              else
+                  if trim str = "\n"
+                  then PD.space 0
+                  else PD.string (trim str)
+          end
+
       | EApp (e1, e2) => parenIf par (box [p_exp env e1,
                                            space,
                                            p_exp' true env e2])
