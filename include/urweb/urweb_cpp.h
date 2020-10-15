@@ -167,6 +167,9 @@ uw_Basis_int uw_Basis_strcspn(struct uw_context *, const char *, const char *);
 uw_Basis_string uw_Basis_substring(struct uw_context *, const char *, uw_Basis_int, uw_Basis_int);
 uw_Basis_string uw_Basis_str1(struct uw_context *, uw_Basis_char);
 uw_Basis_string uw_Basis_ofUnicode(struct uw_context *, uw_Basis_int);
+uw_Basis_int uw_Basis_strlenUtf8(struct uw_context *, const char *);
+uw_Basis_char uw_Basis_strsubUtf8(struct uw_context *, const char *, uw_Basis_int);
+uw_Basis_string uw_Basis_strsuffixUtf8(struct uw_context *, const char *, uw_Basis_int);
 
 uw_Basis_string uw_strdup(struct uw_context *, const char *);
 uw_Basis_string uw_maybe_strdup(struct uw_context *, const char *);
@@ -245,6 +248,7 @@ uw_Basis_string uw_Basis_blessEnvVar(struct uw_context *, uw_Basis_string);
 uw_Basis_string uw_Basis_blessMeta(struct uw_context *, uw_Basis_string);
 
 uw_Basis_string uw_Basis_checkUrl(struct uw_context *, uw_Basis_string);
+uw_Basis_string uw_Basis_anchorUrl(struct uw_context *, uw_Basis_string);
 uw_Basis_string uw_Basis_checkMime(struct uw_context *, uw_Basis_string);
 uw_Basis_string uw_Basis_checkRequestHeader(struct uw_context *, uw_Basis_string);
 uw_Basis_string uw_Basis_checkResponseHeader(struct uw_context *, uw_Basis_string);
@@ -438,5 +442,9 @@ int strcmp_nullsafe(const char *, const char *);
 uw_unit uw_Basis_cache_file(struct uw_context *, uw_Basis_blob contents);
 uw_Basis_blob uw_Basis_check_filecache(struct uw_context *, uw_Basis_string hash);
 uw_Basis_bool uw_Basis_filecache_missed(struct uw_context *);
+
+// Call at start and end of transaction.
+void uw_transaction_arrives();
+void uw_transaction_departs();
 
 #endif

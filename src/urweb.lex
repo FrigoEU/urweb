@@ -459,10 +459,6 @@ xint = x[0-9a-fA-F][0-9a-fA-F];
 <INITIAL> "policy"    => (Tokens.POLICY (pos yypos, pos yypos + size yytext));
 <INITIAL> "ffi"       => (Tokens.FFI (pos yypos, pos yypos + size yytext));
 
-<INITIAL> "Type"      => (Tokens.TYPE (pos yypos, pos yypos + size yytext));
-<INITIAL> "Name"      => (Tokens.NAME (pos yypos, pos yypos + size yytext));
-<INITIAL> "Unit"      => (Tokens.KUNIT (pos yypos, pos yypos + size yytext));
-
 <INITIAL> "SELECT"    => (Tokens.SELECT (pos yypos, pos yypos + size yytext));
 <INITIAL> "DISTINCT"  => (Tokens.DISTINCT (pos yypos, pos yypos + size yytext));
 <INITIAL> "FROM"      => (Tokens.FROM (pos yypos, pos yypos + size yytext));
@@ -523,6 +519,7 @@ xint = x[0-9a-fA-F][0-9a-fA-F];
 <INITIAL> "IS"        => (Tokens.IS (pos yypos, pos yypos + size yytext));
 <INITIAL> "COALESCE"  => (Tokens.COALESCE (pos yypos, pos yypos + size yytext));
 <INITIAL> "LIKE"      => (Tokens.LIKE (pos yypos, pos yypos + size yytext));
+<INITIAL> "<->"       => (Tokens.DISTANCE (pos yypos, pos yypos + size yytext));
 
 <INITIAL> "CONSTRAINT"=> (Tokens.CCONSTRAINT (pos yypos, pos yypos + size yytext));
 <INITIAL> "UNIQUE"    => (Tokens.UNIQUE (pos yypos, pos yypos + size yytext));

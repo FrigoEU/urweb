@@ -244,6 +244,21 @@ urweb daemon restart
 \end{verbatim}
 Communication happens via a UNIX domain socket in file \cd{.urweb\_daemon} in the working directory.
 
+Bundled with the compiler is an LSP or Language Server Protocol server. This is a program that allows various editors to request information about Ur/Web code via a standardized messaging protocol. The Ur/Web LSP server currently provides basic implementations for autocompletion, hover and compiler errors. The server is started by running
+\begin{verbatim}
+urweb -startLspServer
+\end{verbatim}
+Currently there are no prebuilt editor plugins to register this server with your editor of choice but it should be fairly simple to do so. For example in Emacs using the lsp-mode, all you need to make this work is the following configuration (assuming you use the urweb-mode bundled with the compiler):
+\begin{verbatim}
+(require 'lsp)
+(setq lsp-language-id-configuration '((urweb-mode . "urweb")))
+(lsp-register-client
+  (make-lsp-client :new-connection (lsp-stdio-connection '("urweb" "-startLspServer"))
+                    :major-modes '(urweb-mode)
+                    :server-id 'urweb-lsp))
+\end{verbatim}
+Note that to keep the server responsive we don't compile Ur/Web code in the traditional way. Rather, we use only the .urs files (or if applicable .ur files that only contain valid .urs statements) for modules that are not currently being edited. That's why the LSP server requires .urs files for all of your modules.
+
 \medskip
 
 Some other command-line parameters are accepted:
@@ -428,7 +443,7 @@ We give the Ur language definition in \LaTeX $\;$ math mode, since that is prett
   \end{tabular}
 \end{center}
 
-We often write syntax like $e^*$ to indicate zero or more copies of $e$, $e^+$ to indicate one or more copies, and $e,^*$ and $e,^+$ to indicate multiple copies separated by commas.  Another separator may be used in place of a comma.  The $e$ term may be surrounded by parentheses to indicate grouping; those parentheses should not be included in the actual ASCII.
+We often write syntax like $e^*$ to indicate zero or more copies of $e$, $e^+$ to indicate one or more copies, and $e,^*$ and $e,^+$ to indicate multiple copies separated by commas.  Another separator may be used in place of a comma.  When $e$ consists of multiple symbols, the $e$ term and separator (if any) are surrounded by parentheses to indicate grouping; those parentheses should not be included in the actual ASCII.
 
 We write $\ell$ for literals of the primitive types, for the most part following C conventions.  There are $\mt{int}$, $\mt{float}$, $\mt{char}$, and $\mt{string}$ literals.  Character literals follow the SML convention instead of the C convention, written like \texttt{\#"a"} instead of \texttt{'a'}.
 
@@ -471,13 +486,13 @@ $$\begin{array}{rrcll}
   &&& c \; c & \textrm{type-level function application} \\
   &&& \lambda x \; :: \; \kappa \Rightarrow c & \textrm{type-level function abstraction} \\
   \\
-  &&& X \Longrightarrow c & \textrm{type-level kind-polymorphic function abstraction} \\
   &&& c [\kappa] & \textrm{type-level kind-polymorphic function application} \\
+  &&& X \Longrightarrow c & \textrm{type-level kind-polymorphic function abstraction} \\
   \\
   &&& () & \textrm{type-level unit} \\
   &&& \#X & \textrm{field name} \\
   \\
-  &&& [(c = c)^*] & \textrm{known-length type-level record} \\
+  &&& [(c = c,)^*] & \textrm{known-length type-level record} \\
   &&& c \rc c & \textrm{type-level record concatenation} \\
   &&& \mt{map} & \textrm{type-level record map} \\
   \\
@@ -557,10 +572,10 @@ $$\begin{array}{rrcll}
   \\
   &&& \mt{let} \; ed^* \; \mt{in} \; e \; \mt{end} & \textrm{local definitions} \\
   \\
-  &&& \mt{case} \; e \; \mt{of} \; (p \Rightarrow e|)^+ & \textrm{pattern matching} \\
+  &&& \mt{case} \; e \; \mt{of} \; (p \Rightarrow e\mid)^+ & \textrm{pattern matching} \\
   \\
-  &&& \lambda [c \sim c] \Rightarrow e & \textrm{guarded expression abstraction} \\
   &&& e \; ! & \textrm{guarded expression application} \\
+  &&& \lambda [c \sim c] \Rightarrow e & \textrm{guarded expression abstraction} \\
   \\
   &&& \_ & \textrm{wildcard} \\
   &&& (e) & \textrm{explicit precedence} \\
@@ -607,7 +622,7 @@ There are a variety of derived syntactic forms that elaborate into the core synt
 
 In many contexts where record fields are expected, like in a projection $e.c$, a constant field may be written as simply $X$, rather than $\#X$.
 
-A record type may be written $\{(c = c,)^*\}$, which elaborates to $\$[(c = c,)^*]$.
+A record type may be written $\{(c : c,)^*\}$, which elaborates to $\$[(c = c,)^*]$.
 
 The notation $[c_1, \ldots, c_n]$ is shorthand for $[c_1 = (), \ldots, c_n = ()]$.
 
@@ -629,7 +644,7 @@ A signature item or declaration $\mt{class} \; x = \lambda y \Rightarrow c$ may 
 
 Handling of implicit and explicit constructor arguments may be tweaked with some prefixes to variable references.  An expression $@x$ is a version of $x$ where all type class instance and disjointness arguments have been made explicit.  (For the purposes of this paragraph, the type family $\mt{Top.folder}$ is a type class, though it isn't marked as one by the usual means; and any record type is considered to be a type class instance type when every field's type is a type class instance type.)  An expression $@@x$ achieves the same effect, additionally making explicit all implicit constructor arguments.  The default is that implicit arguments are inserted automatically after any reference to a variable, or after any application of a variable to one or more arguments.  For such an expression, implicit wildcard arguments are added for the longest prefix of the expression's type consisting only of implicit polymorphism, type class instances, and disjointness obligations.  The same syntax works for variables projected out of modules and for capitalized variables (datatype constructors).
 
-At the expression level, an analogue is available of the composite $\lambda$ form for constructors.  We define the language of binders as $b ::= p \mid [x] \mid [x \; ? \; \kappa] \mid X \mid [c \sim c]$.  A lone variable $[x]$ stands for an implicit constructor variable of unspecified kind.  The standard value-level function binder is recovered as the type-annotated pattern form $x : \tau$.  It is a compile-time error to include a pattern $p$ that does not match every value of the appropriate type.
+At the expression level, an analogue is available of the composite $\lambda$ form for constructors.  We define the language of binders as $b ::= p \mid [x] \mid [x \; ? \; \kappa] \mid [X] \mid [c \sim c]$.  A lone variable $[x]$ stands for an implicit constructor variable of unspecified kind.  The standard value-level function binder is recovered as the type-annotated pattern form $x : \tau$.  It is a compile-time error to include a pattern $p$ that does not match every value of the appropriate type.
 
 A local $\mt{val}$ declaration may bind a pattern instead of just a plain variable.  As for function arguments, only irrefutable patterns are legal.
 
@@ -752,10 +767,10 @@ $$\infer{\Gamma \vdash c_1 \; c_2 :: \kappa_2}{
 }$$
 
 $$\infer{\Gamma \vdash c[\kappa'] :: [X \mapsto \kappa']\kappa}{
-  \Gamma \vdash c :: X \to \kappa
+  \Gamma \vdash c :: X \longrightarrow \kappa
   & \Gamma \vdash \kappa'
 }
-\quad \infer{\Gamma \vdash X \Longrightarrow c :: X \to \kappa}{
+\quad \infer{\Gamma \vdash X \Longrightarrow c :: X \longrightarrow \kappa}{
   \Gamma, X \vdash c :: \kappa
 }$$
 
@@ -782,7 +797,7 @@ $$\infer{\Gamma \vdash (\overline c) :: (\kappa_1 \times \ldots \times \kappa_n)
   \Gamma \vdash c :: (\kappa_1 \times \ldots \times \kappa_n)
 }$$
 
-$$\infer{\Gamma \vdash \lambda [c_1 \sim c_2] \Rightarrow \tau :: \mt{Type}}{
+$$\infer{\Gamma \vdash [c_1 \sim c_2] \Rightarrow \tau :: \mt{Type}}{
   \Gamma \vdash c_1 :: \{\kappa\}
   & \Gamma \vdash c_2 :: \{\kappa'\}
   & \Gamma, c_1 \sim c_2 \vdash \tau :: \mt{Type}
@@ -918,7 +933,7 @@ $$\infer{\Gamma \vdash e [\kappa] : [X \mapsto \kappa]\tau}{
   \Gamma, X \vdash e : \tau
 }$$
 
-$$\infer{\Gamma \vdash \{\overline{c = e}\} : \{\overline{c : \tau}\}}{
+$$\infer{\Gamma \vdash \{\overline{c = e}\} : \$[\overline{c = \tau}]}{
   \forall i: \Gamma \vdash c_i :: \mt{Name}
   & \Gamma \vdash e_i : \tau_i
   & \forall i \neq j: \Gamma \vdash c_i \sim c_j
@@ -943,12 +958,13 @@ $$\infer{\Gamma \vdash \mt{let} \; \overline{ed} \; \mt{in} \; e \; \mt{end} : \
   \Gamma \vdash \overline{ed} \leadsto \Gamma'
   & \Gamma' \vdash e : \tau
 }
-\quad \infer{\Gamma \vdash \mt{case} \; e \; \mt{of} \; \overline{p \Rightarrow e} : \tau}{
-  \forall i: \Gamma \vdash p_i \leadsto \Gamma_i, \tau'
-  & \Gamma_i \vdash e_i : \tau
+\quad \infer{\Gamma \vdash \mt{case} \; e \; \mt{of} \; \overline{p \Rightarrow e'} : \tau'}{
+  \Gamma \vdash e : \tau
+  & \forall i: \Gamma \vdash p_i \leadsto \Gamma_i; \tau
+  & \Gamma_i \vdash e_i' : \tau'
 }$$
 
-$$\infer{\Gamma \vdash \lambda [c_1 \sim c_2] \Rightarrow e : \lambda [c_1 \sim c_2] \Rightarrow \tau}{
+$$\infer{\Gamma \vdash \lambda [c_1 \sim c_2] \Rightarrow e : [c_1 \sim c_2] \Rightarrow \tau}{
   \Gamma \vdash c_1 :: \{\kappa\}
   & \Gamma \vdash c_2 :: \{\kappa'\}
   & \Gamma, c_1 \sim c_2 \vdash e : \tau
@@ -985,7 +1001,7 @@ $$\infer{\Gamma \vdash M.X \; p \leadsto \Gamma'; \overline{[x_i \mapsto \tau'_i
   & \Gamma \vdash p \leadsto \Gamma'; \overline{[x_i \mapsto \tau'_i]}\tau''
 }$$
 
-$$\infer{\Gamma \vdash \{\overline{X = p}\} \leadsto \Gamma_n; \{\overline{X = \tau}\}}{
+$$\infer{\Gamma \vdash \{\overline{X = p}\} \leadsto \Gamma_n; \$[\overline{X = \tau}]}{
   \Gamma_0 = \Gamma
   & \forall i: \Gamma_i \vdash p_i \leadsto \Gamma_{i+1}; \tau_i
 }
@@ -1458,7 +1474,7 @@ Some operations are only allowed in server-side code or only in client-side code
 The Ur Basis defines the monad constructor class from Haskell.
 
 $$\begin{array}{l}
-  \mt{class} \; \mt{monad} :: \mt{Type} \to \mt{Type} \\
+  \mt{class} \; \mt{monad} :: (\mt{Type} \to \mt{Type}) \to \mt{Type} \\
   \mt{val} \; \mt{return} : \mt{m} ::: (\mt{Type} \to \mt{Type}) \to \mt{t} ::: \mt{Type} \\
   \hspace{.1in} \to \mt{monad} \; \mt{m} \\
   \hspace{.1in} \to \mt{t} \to \mt{m} \; \mt{t} \\
@@ -2109,7 +2125,7 @@ Configure the policy for meta names with the \texttt{allow} and \texttt{deny} \t
 
 Ur/Web supports running code on web browsers, via automatic compilation to JavaScript.
 
-The concurrency model is \emph{cooperative multithreading}.  Like with, say, POSIX threads, which uses the \emph{preemptive multithreading} model, there may be multiple threads of control active at a time.  However, unlike with preemptive multithreading, the currently running thread gets to run interrupted until a well-defined \emph{context-switch} point.  Specifically, four functions defined below are the context-switch points.  They are $\mt{sleep}$, $\mt{rpc}$, $\mt{tryRpc}$, and $\mt{recv}$.  (We explain their purposes as we come to them below.)  Additional functions added via the foreign function interface might also have context-switching behavior.  In any case, it is guaranteed that a running thread ``owns the processor'' until it calls a context-switching function, at which time we may switch to running a different thread instead.
+The concurrency model is \emph{cooperative multithreading}.  Like with, say, POSIX threads, which uses the \emph{preemptive multithreading} model, there may be multiple threads of control active at a time.  However, unlike with preemptive multithreading, the currently running thread gets to run uninterrupted until a well-defined \emph{context-switch} point.  Specifically, four functions defined below are the context-switch points.  They are $\mt{sleep}$, $\mt{rpc}$, $\mt{tryRpc}$, and $\mt{recv}$.  (We explain their purposes as we come to them below.)  Additional functions added via the foreign function interface might also have context-switching behavior.  In any case, it is guaranteed that a running thread ``owns the processor'' until it calls a context-switching function, at which time we may switch to running a different thread instead.
 
 This concurrency paradigm has many nice properties.  For instance, there is almost never any need for locking or other synchronization between threads.
 
@@ -2135,7 +2151,7 @@ $$\begin{array}{l}
   \mt{val} \; \mt{sleep} : \mt{int} \to \mt{transaction} \; \mt{unit}
 \end{array}$$
 
-A few functions are available to registers callbacks for particular error events.  Respectively, they are triggered on calls to $\mt{error}$, uncaught JavaScript exceptions, failure of remote procedure calls, the severance of the connection serving asynchronous messages, or the occurrence of some other error with that connection.  If no handlers are registered for a kind of error, then a JavaScript \cd{alert()} is used to announce its occurrence.  When one of these functions is called multiple times within a single page, all registered handlers are run when appropriate events occur, with handlers run in the reverse of their registration order.
+A few functions are available to register callbacks for particular error events.  Respectively, they are triggered on calls to $\mt{error}$, uncaught JavaScript exceptions, failure of remote procedure calls, the severance of the connection serving asynchronous messages, or the occurrence of some other error with that connection.  If no handlers are registered for a kind of error, then a JavaScript \cd{alert()} is used to announce its occurrence.  When one of these functions is called multiple times within a single page, all registered handlers are run when appropriate events occur, with handlers run in the reverse of their registration order.
 $$\begin{array}{l}
   \mt{val} \; \mt{onError} : (\mt{xbody} \to \mt{transaction} \; \mt{unit}) \to \mt{transaction} \; \mt{unit} \\
   \mt{val} \; \mt{onFail} : (\mt{string} \to \mt{transaction} \; \mt{unit}) \to \mt{transaction} \; \mt{unit} \\
@@ -2294,12 +2310,12 @@ A signature item $\mt{table} \; \mt{x} : \mt{c}$ is actually elaborated into two
 
 \subsubsection{Queries}
 
-Queries $Q$ are added to the rules for expressions $e$.
+Parenthesized queries $(Q)$ are added to the rules for expressions $e$.
 
 $$\begin{array}{rrcll}
-  \textrm{Queries} & Q &::=& (q \; [\mt{ORDER} \; \mt{BY} \; O] \; [\mt{LIMIT} \; N] \; [\mt{OFFSET} \; N]) \\
+  \textrm{Queries} & Q &::=& q \; [\mt{ORDER} \; \mt{BY} \; O] \; [\mt{LIMIT} \; N] \; [\mt{OFFSET} \; N] \\
   \textrm{Pre-queries} & q &::=& \mt{SELECT} \; [\mt{DISTINCT}] \; P \; \mt{FROM} \; F,^+ \; [\mt{WHERE} \; E] \; [\mt{GROUP} \; \mt{BY} \; p,^+] \; [\mt{HAVING} \; E] \\
-  &&& \mid q \; R \; q \mid \{\{\{e\}\}\} \\
+  &&& \mid q \; R \; [\mt{ALL}] \; q \mid \{\{\{e\}\}\} \\
   \textrm{Relational operators} & R &::=& \mt{UNION} \mid \mt{INTERSECT} \mid \mt{EXCEPT} \\
   \textrm{$\mt{ORDER \; BY}$ items} & O &::=& \mt{RANDOM} [()] \mid \hat{E} \; [o] \mid \hat{E} \; [o], O \mid \{\{\{e\}\}\}
 \end{array}$$

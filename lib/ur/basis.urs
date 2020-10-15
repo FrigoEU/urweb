@@ -95,7 +95,12 @@ val strsindex : string -> string -> option int
 val strcspn : string -> string -> int
 val substring : string -> int -> int -> string
 val str1 : char -> string
-val ofUnicode : int -> string
+
+(* These last three reveal the Unicode encoding,
+ * into sequences of 8-bit bytes. *)
+val strlenUtf8 : string -> int
+val strsubUtf8 : string -> int -> char
+val strsuffixUtf8 : string -> int -> string
 
 class show
 val show : t ::: Type -> show t -> t -> string
@@ -579,6 +584,7 @@ val sql_gt : t ::: Type -> sql_binary t t bool
 val sql_ge : t ::: Type -> sql_binary t t bool
 
 val sql_like : sql_binary string string bool
+val sql_distance : sql_binary string string float
 
 val sql_count : tables ::: {{Type}} -> agg ::: {{Type}} -> exps ::: {Type}
                 -> sql_exp tables agg exps int
@@ -816,6 +822,7 @@ type id
 val fresh : transaction id
 val giveFocus : id -> transaction unit
 val show_id : show id
+val anchorUrl : id -> url
 
 val dyn : ctx ::: {Unit} -> use ::: {Type} -> bind ::: {Type} -> [ctx ~ [Dyn]] => unit
           -> tag [Signal = signal (xml ([Dyn] ++ ctx) use bind)] ([Dyn] ++ ctx) [] use bind
@@ -1046,7 +1053,7 @@ val radio : formTag (option string) radio [Data = data_attr, Id = id]
 val radioOption : unit -> tag ([Value = string, Checked = bool] ++ boxAttrs ++ inputAttrs') radio [] [] []
 
 con select = [Select]
-val select : formTag string select (boxAttrs ++ inputAttrs')
+val select : formTag string select (boxAttrs ++ inputAttrs' ++ [Multiple = bool])
 val option : unit -> tag [Data = data_attr, Value = string, Selected = bool] select [] [] []
 
 val submit : ctx ::: {Unit} -> use ::: {Type}
@@ -1099,7 +1106,7 @@ val ccheckbox : cformTag ([Size = int, Source = source bool] ++ boxAttrs ++ inpu
 
 val cradio : cformTag ([Source = source (option string), Value = string] ++ boxAttrs ++ inputAttrs') []
 
-val cselect : cformTag ([Source = source string] ++ boxAttrs ++ inputAttrs') [Cselect]
+val cselect : cformTag ([Source = source string, Multiple = bool] ++ boxAttrs ++ inputAttrs') [Cselect]
 val coption : unit -> tag [Value = string, Selected = bool] [Cselect, Body] [] [] []
 
 val ctextarea : cformTag ([Rows = int, Cols = int, Placeholder = string, Source = source string,

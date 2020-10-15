@@ -21,7 +21,6 @@
 #include <pthread.h>
 
 #include <unicode/utf8.h>
-#include <unicode/ustring.h>
 #include <unicode/uchar.h>
 
 #include "types.h"
@@ -176,19 +175,18 @@ void *uw_init_client_data();
 void uw_free_client_data(void *);
 void uw_copy_client_data(void *dst, void *src);
 
-static uw_Basis_int my_rand() {
-  int ret, r = RAND_bytes((unsigned char *)&ret, sizeof ret);
-  if (r)
-    return abs(ret);
-  else
-    return -1;
+static int my_rand(uw_context ctx) {
+  unsigned int ret;
+  if (RAND_bytes((unsigned char *)&ret, sizeof ret)) {
+    ret >>= 1; // clear top bit
+    return ret;
+  } else
+    uw_error(ctx, FATAL, "Random number generation failed");
 }
 
 static client *new_client(uw_context ctx) {
   client *c;
-  int pass = my_rand();
-
-  if (pass < 0) uw_error(ctx, FATAL, "Random number generation failed during client initialization");
+  int pass = my_rand(ctx);
 
   pthread_mutex_lock(&clients_mutex);
 
@@ -345,7 +343,8 @@ static uw_Basis_channel new_channel(client *c) {
 static void client_send(client *c, uw_buffer *msg, const char *script, int script_len) {
   pthread_mutex_lock(&c->lock);
 
-  if (c->sock != -1) {
+  if (c->mode != USED) { }
+  else if (c->sock != -1) {
     c->send(c->sock, on_success, strlen(on_success));
     c->send(c->sock, begin_msgs, sizeof(begin_msgs) - 1);
     if (script_len > 0) {
@@ -843,6 +842,29 @@ void uw_login(uw_context ctx) {
     uw_copy_client_data(c->data, ctx->client_data);
     ctx->client = c;
   }
+}
+
+// It gets particularly hard to avoid concurrency anomalies in connection with
+// the expunger thread, which garbage-collects unused clients, so that their IDs
+// can be reused.  To save ourselves from needing to deal with those anomalies,
+// we enforce that the expunger never runs simultaneously with other transactions.
+
+static pthread_rwlock_t expunge_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+void uw_transaction_arrives() {
+  pthread_rwlock_rdlock(&expunge_lock);
+}
+
+void uw_transaction_departs() {
+  pthread_rwlock_unlock(&expunge_lock);
+}
+
+static void uw_expunger_arrives() {
+  pthread_rwlock_wrlock(&expunge_lock);
+}
+
+static void uw_expunger_departs() {
+  pthread_rwlock_unlock(&expunge_lock);
 }
 
 failure_kind uw_begin(uw_context ctx, char *path) {
@@ -2350,12 +2372,7 @@ uw_unit uw_Basis_htmlifySpecialChar_w(uw_context ctx, uw_Basis_char ch) {
   uw_check(ctx, INTS_MAX+3);
 
   if(uw_Basis_isprint(ctx, ch)) {
-
-    int32_t len_written = 0;
-    UErrorCode err = U_ZERO_ERROR;
-
-    u_strToUTF8(ctx->page.front, 5, &len_written, (const UChar*)&ch, 1, &err);
-    len = len_written;
+    U8_APPEND_UNSAFE(ctx->page.front, len, ch);
   }
 
   // either it's a non-printable character, or we failed to convert to UTF-8
@@ -2535,6 +2552,13 @@ uw_unit uw_Basis_htmlifySource_w(uw_context ctx, uw_Basis_source src) {
   return uw_unit_v;
 }
 
+uw_Basis_char uw_Basis_strsubUtf8(uw_context ctx, uw_Basis_string s, uw_Basis_int n) {
+  if (n < 0 || n >= strlen(s))
+    uw_error(ctx, FATAL, "Out-of-bounds strsubUtf8");
+
+  return s[n];
+}
+
 uw_Basis_char uw_Basis_strsub(uw_context ctx, uw_Basis_string s, uw_Basis_int n) {
   uw_Basis_char c;
   int offset = 0;
@@ -2555,6 +2579,19 @@ uw_Basis_char uw_Basis_strsub(uw_context ctx, uw_Basis_string s, uw_Basis_int n)
   uw_error(ctx, FATAL, "Negative strsub bound");
 }
 
+uw_Basis_string uw_Basis_strsuffixUtf8(uw_context ctx, uw_Basis_string s, uw_Basis_int n) {
+  int offset = 0;
+  while (n >= 0) {
+    if (s[offset] == 0 || n == 0)
+      return s + offset;
+
+    ++s;
+    --n;
+  }
+
+  uw_error(ctx, FATAL, "Negative strsuffixUtf8 bound");
+}
+
 uw_Basis_string uw_Basis_strsuffix(uw_context ctx, uw_Basis_string s, uw_Basis_int n) {
   int offset = 0;
   while (n >= 0) {
@@ -2566,6 +2603,11 @@ uw_Basis_string uw_Basis_strsuffix(uw_context ctx, uw_Basis_string s, uw_Basis_i
   }
 
   uw_error(ctx, FATAL, "Negative strsuffix bound");
+}
+
+uw_Basis_int uw_Basis_strlenUtf8(uw_context ctx, uw_Basis_string s) {
+  (void)ctx;
+  return strlen(s);
 }
 
 uw_Basis_int uw_Basis_strlen(uw_context ctx, uw_Basis_string s) {
@@ -2722,18 +2764,6 @@ uw_Basis_string uw_Basis_str1(uw_context ctx, uw_Basis_char ch) {
 
   ctx->heap.front += req + 1;
   return r; 
-}
-
-uw_Basis_string uw_Basis_ofUnicode(uw_context ctx, uw_Basis_int n) {
-  UChar buf16[] = {n};
-  uw_Basis_string out = uw_malloc(ctx, 3);
-  int32_t outLen;
-  UErrorCode pErrorCode = 0;
-
-  if (u_strToUTF8(out, 3, &outLen, buf16, 1, &pErrorCode) == NULL || outLen == 0)
-    uw_error(ctx, FATAL, "Bad Unicode string to unescape (error %s)", u_errorName(pErrorCode));
-
-  return out;
 }
 
 uw_Basis_string uw_strdup(uw_context ctx, uw_Basis_string s1) {
@@ -3746,7 +3776,6 @@ int uw_commit(uw_context ctx) {
     client *c = find_client(d->client);
 
     assert (c != NULL);
-    assert(c->mode == USED);
 
     client_send(c, &d->msgs, ctx->script.start, uw_buffer_used(&ctx->script));
   }
@@ -3902,6 +3931,8 @@ void uw_prune_clients(uw_context ctx) {
 
   cutoff = time(NULL) - ctx->app->timeout;
 
+  uw_expunger_arrives();
+  
   pthread_mutex_lock(&clients_mutex);
   pruning_thread = pthread_self();
   pruning_thread_initialized = 1;
@@ -3932,6 +3963,8 @@ void uw_prune_clients(uw_context ctx) {
   }
 
   pthread_mutex_unlock(&clients_mutex);
+
+  uw_expunger_departs();
 }
 
 failure_kind uw_initialize(uw_context ctx) {
@@ -4615,7 +4648,7 @@ uw_Basis_int uw_Basis_ord(uw_context ctx, uw_Basis_char c) {
 
 uw_Basis_bool uw_Basis_iscodepoint(uw_context ctx, uw_Basis_int n) {
   (void)ctx;
-  return !!(n <= 0x10FFFF);
+  return !!(0 <= n && n <= 0x10FFFF);
 }
 
 uw_Basis_bool uw_Basis_issingle(uw_context ctx, uw_Basis_char c) {
@@ -4624,18 +4657,18 @@ uw_Basis_bool uw_Basis_issingle(uw_context ctx, uw_Basis_char c) {
 }
 
 uw_Basis_char uw_Basis_chr(uw_context ctx, uw_Basis_int n) {
-  (void)ctx;
-  uw_Basis_char ch = (uw_Basis_char)n;
-
-  if (n > 0x10FFFF) {
+  if (!uw_Basis_iscodepoint(ctx, n)) {
     uw_error(ctx, FATAL, "The integer %lld is not a valid char codepoint", n);
   }
-
-  return ch;
+  return (uw_Basis_char)n;
 }
 
 uw_Basis_string uw_Basis_currentUrl(uw_context ctx) {
   return ctx->current_url;
+}
+
+uw_Basis_string uw_Basis_anchorUrl(uw_context ctx, uw_Basis_string s) {
+  return uw_Basis_strcat(ctx, uw_Basis_strcat(ctx, ctx->current_url, "#"), s);
 }
 
 void uw_set_currentUrl(uw_context ctx, char *s) {
@@ -4670,12 +4703,7 @@ uw_Basis_unit uw_Basis_debug(uw_context ctx, uw_Basis_string s) {
 }
 
 uw_Basis_int uw_Basis_rand(uw_context ctx) {
-  int r = my_rand();
-
-  if (r >= 0)
-    return r;
-  else
-    uw_error(ctx, FATAL, "Random number generation failed");
+  return my_rand(ctx);
 }
 
 void uw_noPostBody(uw_context ctx) {
