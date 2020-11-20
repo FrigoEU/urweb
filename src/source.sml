@@ -131,6 +131,7 @@ and exp' =
   | ECutMulti of exp * con
 
   | EWild
+  | EHole
 
   | ECase of exp * (pat * exp) list
 

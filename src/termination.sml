@@ -214,6 +214,7 @@ fun declOk' env (d, loc) =
                 in
                     case #1 e of
                         EPrim _ => default
+                      | EHole _ => default
                       | ERel n => (List.nth (penv, n), calls)
                       | ENamed n =>
                         let

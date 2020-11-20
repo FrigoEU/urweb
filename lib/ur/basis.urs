@@ -524,6 +524,7 @@ val sql_exp : tabs ::: {{Type}} -> agg ::: {{Type}} -> t ::: Type -> rest ::: {T
 class sql_injectable
 val sql_prim : t ::: Type -> sql_injectable_prim t -> sql_injectable t
 val sql_option_prim : t ::: Type -> sql_injectable_prim t -> sql_injectable (option t)
+(* val sql_list_prim : t ::: Type -> sql_injectable_prim t -> sql_injectable (list t) *)
 
 val sql_inject : tables ::: {{Type}} -> agg ::: {{Type}} -> exps ::: {Type}
                  -> t ::: Type
@@ -582,6 +583,7 @@ val sql_lt : t ::: Type -> sql_binary t t bool
 val sql_le : t ::: Type -> sql_binary t t bool
 val sql_gt : t ::: Type -> sql_binary t t bool
 val sql_ge : t ::: Type -> sql_binary t t bool
+(* val sql_in : t ::: Type -> sql_binary t (list t) bool *)
 
 val sql_like : sql_binary string string bool
 val sql_distance : sql_binary string string float

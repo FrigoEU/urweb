@@ -127,6 +127,7 @@ datatype exp' =
 
        | EError
        | EUnif of exp option ref
+       | EHole of cunif ref
 
        | ELet of edecl list * exp * con
 

@@ -2090,7 +2090,45 @@ fun chaseUnifs c =
         L'.CUnif (_, _, _, _, ref (L'.Known c)) => chaseUnifs c
       | _ => c
 
-fun elabExp (env, denv) (eAll as (e, loc)) =
+val consEqSimple =
+    let
+        fun ces env (c1 : L'.con, c2 : L'.con) =
+            let
+                val c1 = hnormCon env c1
+                val c2 = hnormCon env c2
+            in
+                case (#1 c1, #1 c2) of
+                    (L'.CRel n1, L'.CRel n2) => n1 = n2
+                  | (L'.CNamed n1, L'.CNamed n2) =>
+                    n1 = n2 orelse
+                    (case #3 (E.lookupCNamed env n1) of
+                         SOME (L'.CNamed n2', _) => n2' = n1
+                       | _ => false)
+                  | (L'.CModProj n1, L'.CModProj n2) => n1 = n2
+                  | (L'.CApp (f1, x1), L'.CApp (f2, x2)) => ces env (f1, f2) andalso ces env (x1, x2)
+                  | (L'.CAbs (x1, k1, c1), L'.CAbs (_, _, c2)) => ces (E.pushCRel env x1 k1) (c1, c2)
+                  | (L'.CName x1, L'.CName x2) => x1 = x2
+                  | (L'.CRecord (_, xts1), L'.CRecord (_, xts2)) =>
+                    ListPair.all (fn ((x1, t1), (x2, t2)) =>
+                                     ces env (x1, x2) andalso ces env (t2, t2)) (xts1, xts2)
+                  | (L'.CConcat (x1, y1), L'.CConcat (x2, y2)) =>
+                    ces env (x1, x2) andalso ces env (y1, y2)
+                  | (L'.CMap _, L'.CMap _) => true
+                  | (L'.CUnit, L'.CUnit) => true
+                  | (L'.CTuple cs1, L'.CTuple cs2) => ListPair.all (ces env) (cs1, cs2)
+                  | (L'.CProj (c1, n1), L'.CProj (c2, n2)) => ces env (c1, c2) andalso n1 = n2
+                  | (L'.CUnif (_, _, _, _, r1), L'.CUnif (_, _, _, _, r2)) => r1 = r2
+
+                  | (L'.TFun (d1, r1), L'.TFun (d2, r2)) => ces env (d1, d2) andalso ces env (r1, r2)
+                  | (L'.TRecord c1, L'.TRecord c2) => ces env (c1, c2)
+                  
+                  | _ => false
+            end
+    in
+        ces
+    end
+    
+fun elabExp (env, denv) (eAll as (e, loc)): (L'.exp * L'.con * constraint list) =
     let
         (*val () = eprefaces "elabExp" [("eAll", SourcePrint.p_exp eAll)]*)
         (*val befor = Time.now ()*)
@@ -2140,6 +2178,16 @@ fun elabExp (env, denv) (eAll as (e, loc)) =
                 val c = cunif env (loc, (L'.KType, loc))
             in
                 ((L'.EUnif r, loc), c, [TypeClass (Blames.snapshot (), env, c, r, loc)])
+            end
+
+          | L.EHole =>
+            let
+                val c = cunif env (loc, (L'.KType, loc))
+                val r = case c of
+                            (L'.CUnif (_, _, _, _, r), _) => r
+                          | _ => raise Fail "impossible"
+            in
+                ((L'.EHole r, loc), c, [])
             end
 
           | L.EApp (e1, e2) =>
@@ -5043,6 +5091,35 @@ fun elabFile basis basis_tm topStr topSgn top_tm env changeEnv file =
                                                                               ("Need", s2)]))))
                  (!delayedUnifs);
              delayedUnifs := []);
+
+        if stopHere () then
+            ()
+        else
+            let
+                fun debug str = (TextIO.output (TextIO.stdErr, str);
+                                 TextIO.flushOut TextIO.stdErr)
+                val () = ElabUtilPos.mliftConInCon := E.mliftConInCon
+                val declSearch = ElabUtilPos.Decl.search
+                                     { kind = fn _ => NONE
+                                     , con = fn _ => NONE
+                                     , exp = fn (e, loc) =>
+                                                case e of
+                                                    L'.EHole (ref (L'.Known c)) => SOME c
+                                                  | _ => NONE
+                                     , sgn_item = fn _ => NONE
+                                     , sgn = fn _ => NONE
+                                     , str = fn _ => NONE
+                                     , decl = fn _ => NONE
+                                     }
+            in
+                case List.foldl (fn (d, acc) => case acc of
+                                                    NONE => declSearch d
+                                                  | SOME found => SOME found
+                                ) NONE file of
+                    NONE => (debug "nope\n")
+                  | SOME c => (debug "yp\n"; declError env'' (Hole c))
+            end
+            ;
 
         if stopHere () then
             ()

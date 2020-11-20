@@ -364,6 +364,7 @@ fun mapfoldB {kind = fk, con = fc, exp = fe, bind} =
               | EError => S.return2 eAll
               | EUnif (ref (SOME e)) => mfe ctx e
               | EUnif _ => S.return2 eAll
+              | EHole _ => S.return2 eAll
 
               | ELet (des, e, t) =>
                 let
@@ -880,6 +881,56 @@ fun mapfoldB {kind = fk, con = fc, exp = fe, sgn_item = fsgi, sgn = fsg, str = f
     in
         mfd
     end
+
+    fun mapfold {kind, con, exp, sgn_item, sgn, str, decl} =
+        mapfoldB {kind = fn () => kind,
+                  con = fn () => con,
+                  exp = fn () => exp,
+                  sgn_item = fn () => sgn_item,
+                  sgn = fn () => sgn,
+                  str = fn () => str,
+                  decl = fn () => decl,
+                  bind = fn ((), _) => ()} ()
+
+    fun search {kind, con, exp, sgn_item, sgn, str, decl} k =
+        case mapfold {kind = fn x => fn () =>
+                                        case kind x of
+                                            NONE => S.Continue (#1 x, ())
+                                          | SOME v => S.Return v,
+
+                      con = fn x => fn () =>
+                                      case con x of
+                                          NONE => S.Continue (#1 x, ())
+                                        | SOME v => S.Return v,
+
+                      exp = fn x => fn () =>
+                                      case exp x of
+                                          NONE => S.Continue (#1 x, ())
+                                        | SOME v => S.Return v,
+
+                      sgn_item = fn x => fn () =>
+                                            case sgn_item x of
+                                                NONE => S.Continue (#1 x, ())
+                                              | SOME v => S.Return v,
+
+                      sgn = fn x => fn () =>
+                                      case sgn x of
+                                          NONE => S.Continue (#1 x, ())
+                                        | SOME v => S.Return v,
+
+                      str = fn x => fn () =>
+                                      case str x of
+                                          NONE => S.Continue (#1 x, ())
+                                        | SOME v => S.Return v,
+
+                      decl = fn x => fn () =>
+                                        case decl x of
+                                            NONE => S.Continue (#1 x, ())
+                                          | SOME v => S.Return v
+
+                    } k () of
+            S.Return x => SOME x
+          | S.Continue _ => NONE
 
     fun fold {kind, con, exp, sgn_item, sgn, str, decl} (st : 'a) d : 'a =
         case mapfoldB {kind = fn () => fn k => fn st => S.Continue (#1 k, kind (k, st)),

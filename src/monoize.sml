@@ -1986,6 +1986,11 @@ fun monoExp (env, st, fm) (all as (e, loc)) =
                 ((L'.EAbs ("f", tf, tf, (L'.ERel 0, loc)), loc),
                  fm)
             end
+          (* | L.ECApp ((L.EFfi ("Basis", "sql_list_prim"), _), t) => *)
+            (* annoying, expression IN (value [, ...]) syntax is actually a special case *)
+            (* in SQL... *)
+            (* Serialize into (<serialized val1>, ...) similar to sql_option_prim. *)
+            (* First use List.map to serialize, then run string concats *)
           | L.ECApp ((L.EFfi ("Basis", "sql_option_prim"), _), t) =>
             let
                 val t = monoType env t

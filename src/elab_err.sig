@@ -91,6 +91,7 @@ signature ELAB_ERR = sig
              KunifsRemain of Elab.decl list
            | CunifsRemain of Elab.decl list
            | Nonpositive of Elab.decl
+           | Hole of Elab.con
 
     val declError : ElabEnv.env -> decl_error -> unit
 
