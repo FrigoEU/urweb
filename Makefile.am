@@ -60,7 +60,7 @@ bin/urweb: src/compiler.mlb xml/entities.sml \
 		src/urweb.mlton.lex.sml \
 		src/urweb.mlton.grm.sig src/urweb.mlton.grm.sml
 	mkdir -p bin
-	$(MLTON) $(MLTONARGS) -profile time -mlb-path-var 'SRC $(abs_srcdir)/src' -mlb-path-var 'BUILD $(abs_builddir)/src' -output $@ $<
+	$(MLTON) $(MLTONARGS) -mlb-path-var 'SRC $(abs_srcdir)/src' -mlb-path-var 'BUILD $(abs_builddir)/src' -output $@ $<
 bin/urwebtc: src/compiler.mlb xml/entities.sml \
 		src/urweb.mlb $(srcdir)/src/*.sig $(srcdir)/src/*.sml src/config.sml \
 		src/urweb.mlton.lex.sml \
