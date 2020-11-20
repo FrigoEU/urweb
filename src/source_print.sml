@@ -225,6 +225,7 @@ fun p_exp' par (e, _) =
                               string ")"]        
 
       | EPrim p => Prim.p_t p
+      | EHole _ => p_string "___"
       | EVar (ss, s, _) => p_list_sep (string ".") string (ss @ [s])
       | EApp (e1, e2) => parenIf par (box [p_exp e1,
                                            space,
