@@ -61,6 +61,15 @@ signature ELAB_UTIL_POS = sig
                               bind: 'context * binder -> 'context
                               }
                              -> 'context -> 'state -> Elab.decl -> 'state
+
+                  val search : {kind : Elab.kind -> 'a option,
+                                con : Elab.con -> 'a option,
+                                exp : Elab.exp -> 'a option,
+                                sgn_item : Elab.sgn_item -> 'a option,
+                                sgn : Elab.sgn -> 'a option,
+                                str : Elab.str -> 'a option,
+                                decl : Elab.decl -> 'a option}
+                               -> Elab.decl -> 'a option
               end
 
 end

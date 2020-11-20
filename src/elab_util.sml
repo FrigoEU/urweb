@@ -360,6 +360,7 @@ fun mapfoldB {kind = fk, con = fc, exp = fe, bind} =
         and mfe' ctx (eAll as (e, loc)) =
             case e of
                 EPrim _ => S.return2 eAll
+              | EHole _ => S.return2 eAll
               | ERel _ => S.return2 eAll
               | ENamed _ => S.return2 eAll
               | EModProj _ => S.return2 eAll

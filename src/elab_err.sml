@@ -267,6 +267,7 @@ datatype decl_error =
          KunifsRemain of decl list
        | CunifsRemain of decl list
        | Nonpositive of decl
+       | Hole of Elab.con
 
 fun lspan [] = ErrorMsg.dummySpan
   | lspan ((_, loc) :: _) = loc
@@ -332,6 +333,8 @@ fun declError env err =
       | Nonpositive d =>
         (ErrorMsg.errorAt (#2 d) "Non-strictly-positive datatype declaration (could allow non-termination)";
          eprefaces' [("Decl", p_decl env d)])
+      | Hole c => 
+        (eprefaces' [("Hole found with type: ", p_con env c)])
 
 datatype sgn_error =
          UnboundSgn of ErrorMsg.span * string

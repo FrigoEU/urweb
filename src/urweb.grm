@@ -374,7 +374,7 @@ fun patternOut (e : exp) =
  | STRING of string | INT of Int64.int | FLOAT of Real64.real | CHAR of char
  | SYMBOL of string | CSYMBOL of string
  | LPAREN | RPAREN | LBRACK | RBRACK | LBRACE | RBRACE
- | EQ | COMMA | COLON | DCOLON | DCOLONWILD | TCOLON | TCOLONWILD | DOT | HASH | UNDER | UNDERUNDER | BAR
+ | EQ | COMMA | COLON | DCOLON | DCOLONWILD | TCOLON | TCOLONWILD | DOT | HASH | UNDER | UNDERUNDER | UNDERUNDERUNDER | BAR
  | PLUS | MINUS | DIVIDE | DOTDOTDOT | MOD | AT
  | CON | LTYPE | VAL | REC | AND | FUN | MAP | UNIT | CLASS | FFI
  | DATATYPE | OF
@@ -1211,6 +1211,7 @@ eexp   : eapps                          (case #1 eapps of
                                              #1 (eargs (eexp, (CWild (KType, loc), loc)))
                                          end)
        | CSYMBOL DKARROW eexp           (EKAbs (CSYMBOL, eexp), s (CSYMBOLleft, eexpright))
+
        | eexp COLON cexp                (EAnnot (eexp, cexp), s (eexpleft, cexpright))
        | eexp MINUSMINUS cexp           (ECut (eexp, cexp), s (eexpleft, cexpright))
        | eexp MINUSMINUSMINUS cexp      (ECutMulti (eexp, cexp), s (eexpleft, cexpright))
@@ -1415,6 +1416,8 @@ eterm  : LPAREN eexp RPAREN             (#1 eexp, s (LPARENleft, RPARENright))
        | FLOAT                          (EPrim (Prim.Float FLOAT), s (FLOATleft, FLOATright))
        | STRING                         (EPrim (Prim.String (Prim.Normal, STRING)), s (STRINGleft, STRINGright))
        | CHAR                           (EPrim (Prim.Char CHAR), s (CHARleft, CHARright))
+
+       | UNDERUNDERUNDER                (EHole, s (UNDERUNDERUNDERleft, UNDERUNDERUNDERright))
 
        | path DOT idents                (let
                                              val loc = s (pathleft, identsright)

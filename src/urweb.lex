@@ -405,6 +405,7 @@ xint = x[0-9a-fA-F][0-9a-fA-F];
 <INITIAL> "$"         => (Tokens.DOLLAR (pos yypos, pos yypos + size yytext));
 <INITIAL> "#"         => (Tokens.HASH (pos yypos, pos yypos + size yytext));
 <INITIAL> "__"        => (Tokens.UNDERUNDER (pos yypos, pos yypos + size yytext));
+<INITIAL> "___"       => (Tokens.UNDERUNDERUNDER (pos yypos, pos yypos + size yytext));
 <INITIAL> "_"         => (Tokens.UNDER (pos yypos, pos yypos + size yytext));
 <INITIAL> "~"         => (Tokens.TWIDDLE (pos yypos, pos yypos + size yytext));
 <INITIAL> "|"         => (Tokens.BAR (pos yypos, pos yypos + size yytext));

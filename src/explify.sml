@@ -123,6 +123,7 @@ fun explifyExp (e, loc) =
       | L.EError => raise Fail ("explifyExp: EError at " ^ EM.spanToString loc)
       | L.EUnif (ref (SOME e)) => explifyExp e
       | L.EUnif _ => raise Fail ("explifyExp: Undetermined EUnif at " ^ EM.spanToString loc)
+      | L.EHole _ => raise Fail ("explifyExp: EHole present at " ^ EM.spanToString loc)
 
       | L.ELet (des, e, t) =>
         foldr (fn ((de, loc), e) =>

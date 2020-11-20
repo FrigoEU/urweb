@@ -317,6 +317,7 @@ and p_pat x = p_pat' false x
 fun p_exp' par env (e, _) =
     case e of
         EPrim p => Prim.p_t p
+      | EHole _ => string "___"
       | ERel n =>
         ((if !debug then
               string (#1 (E.lookupERel env n) ^ "_" ^ Int.toString n)
