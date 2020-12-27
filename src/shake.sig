@@ -34,4 +34,6 @@ signature SHAKE = sig
     val sliceDb : bool ref
     (* Set this to try to delete anything not needed to determine the database schema. *)
 
+    val partialBuild : bool ref
+
 end

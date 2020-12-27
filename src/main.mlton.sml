@@ -252,7 +252,9 @@ fun oneRun args =
               ("startLspServer", ZERO Lsp.startServer, SOME "Start Language Server Protocol server"),
               ("partialBuild", ONE ("<module>",
                                     (fn module =>
-                                        Compiler.partialBuild := SOME module)),
+                                        (Compiler.partialBuild := SOME module;
+                                         Shake.partialBuild := true)
+                                   )),
                SOME "prefix names of modules found in <path> with <name>"),
               ("noEmacs", set_true Demo.noEmacs,
                     NONE),

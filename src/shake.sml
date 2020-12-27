@@ -30,6 +30,7 @@
 structure Shake :> SHAKE = struct
 
 val sliceDb = ref false
+val partialBuild = ref false
 
 open Core
 
@@ -49,8 +50,33 @@ val dummye = (EPrim (Prim.String (Prim.Normal, "")), ErrorMsg.dummySpan)
 fun tupleC cs = (CTuple cs, ErrorMsg.dummySpan)
 fun tupleE es = (ERecord (map (fn e => (dummyt, e, dummyt)) es), ErrorMsg.dummySpan)
 
-fun shake file =
+fun shake (file: Core.file) =
     let
+        val file: Core.file =
+            if !partialBuild
+            then
+                List.map
+                    (U.Decl.map { kind = fn k => k
+                                , con = fn c => c
+                                , exp = fn e => case e of
+                                                    (ERecord xets) => ERecord (List.mapiPartial
+                                                                                   (fn (_, xet) => case xet of
+                                                                                                  (* TODO keep links inside partially built module *)
+                                                                                                       (* Problem is (maybe?) that there can be ANY exp in here, not just (possibly nested) EApp's (but that's the most common case) *)
+                                                                                                       (* UPDATE: nope this is not true! expressions inside link can only be nested app and then a named. See Tag.sml -> exp -> tagIt -> unravel! *)
+                                                                                                     (((CName "Link"), _), (e, _), _) =>
+                                                                                                     if e = !partialBuild
+                                                                                                     then SOME xet
+                                                                                                     else NONE
+                                                                                                   | _ => SOME xet
+                                                                                   )
+                                                                                   xets)
+                                                  | _ => e
+                                , decl = fn d => d
+                                }
+                    )
+                    file
+            else file
         val usedVarsC = U.Con.fold {kind = fn (_, st) => st,
                                     con = fn (c, cs) =>
                                              case c of
