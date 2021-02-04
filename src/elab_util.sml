@@ -910,7 +910,7 @@ fun mapfoldB {kind = fk, con = fc, exp = fe, sgn_item = fsgi, sgn = fsg, str = f
                                                  | DExport _ => ctx
                                                  | DTable (tn, x, n, c, _, pc, _, cc) =>
                                                    let
-                                                       val ct = (CModProj (n, [], "sql_table"), loc)
+                                                       val ct = (CModProj (tn, [], "sql_table"), loc)
                                                        val ct = (CApp (ct, c), loc)
                                                        val ct = (CApp (ct, (CConcat (pc, cc), loc)), loc)
                                                    in
