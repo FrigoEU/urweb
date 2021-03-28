@@ -461,8 +461,7 @@ val sql_relop : free ::: {{Type}}
                 -> sql_query1 free afree tables1 selectedFields selectedExps
                 -> sql_query1 free afree tables2 selectedFields selectedExps
                 -> sql_query1 free afree [] selectedFields selectedExps
-val sql_forget_tables : free ::: {{Type}} -> afree ::: {{Type}} -> tables ::: {{Type}} -> selectedFields ::: {{Type}} -> selectedExps ::: {Type}
-                        -> sql_query1 free afree tables selectedFields selectedExps
+val sql_forget_tables : free ::: {{Type}} -> afree ::: {{Type}} -> tables ::: {{Type}} -> selectedFields ::: {{Type}} -> selectedExps ::: {Type} -> sql_query1 free afree tables selectedFields selectedExps
                         -> sql_query1 free afree [] selectedFields selectedExps
 
 type sql_direction
@@ -640,6 +639,10 @@ val sql_bfunc : tables ::: {{Type}} -> agg ::: {{Type}} -> exps ::: {Type}
                 -> sql_exp tables agg exps ran
 val sql_similarity : sql_bfunc string string float
 (* Only supported by Postgres for now, via the pg_trgm module *)
+
+(* class sql_isdatetime *)
+(* val sql_isdatetime_time : sql_isdatetime *)
+val sql_date_part : t ::: Type -> sql_bfunc string t int
 
 val sql_nullable : tables ::: {{Type}} -> agg ::: {{Type}} -> exps ::: {Type} -> t ::: Type
                    -> sql_injectable_prim t

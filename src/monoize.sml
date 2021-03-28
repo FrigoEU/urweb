@@ -2330,6 +2330,7 @@ fun monoExp (env, st, fm) (all as (e, loc)) =
                  fm)
             end
           | L.EFfi ("Basis", "sql_not") => (str "NOT", fm)
+          | L.EFfi ("Basis", "sql_extract_isodow") => (str "EXTRACT(isodow FROM )", fm)
           | L.ECApp ((L.EFfi ("Basis", "sql_neg"), _), _) =>
             ((L'.EAbs ("_", (L'.TRecord [], loc), (L'.TFfi ("Basis", "string"), loc),
                        str "-"), loc), fm)
@@ -2695,6 +2696,8 @@ fun monoExp (env, st, fm) (all as (e, loc)) =
                                                        str ")"]), loc)), loc)), loc),
                  fm)
             end
+          | L.ECApp ((L.EFfi ("Basis", "sql_date_part"), _), _) =>
+            (str "date_part", fm)
           | L.EFfi ("Basis", "sql_similarity") =>
             ((case #supportsSimilar (Settings.currentDbms ()) of
                   NONE => ErrorMsg.errorAt loc "The DBMS you've selected doesn't support SIMILAR."
