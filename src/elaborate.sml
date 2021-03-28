@@ -55,8 +55,8 @@
  structure SS = BinarySetFn(SK)
  structure SM = BinaryMapFn(SK)
 
- val basis_r = ref 0
- val top_r = ref 0
+ val basis_r: L'.modulename ref = ref 0
+ val top_r: L'.modulename ref = ref 0
 
  fun elabExplicitness e =
      case e of

@@ -28,6 +28,9 @@
 structure Elab = struct
 
 type 'a located = 'a ErrorMsg.located
+type moduleId = string
+type signatureId = string
+type identifierId = string
 
 datatype kind' =
          KType
@@ -61,8 +64,12 @@ datatype con' =
        | TDisjoint of con * con * con
 
        | CRel of int
-       | CNamed of int
-       | CModProj of int * string list * string
+       | CNamed of ( moduleId (* modulename *)
+                     * moduleId list (* submodulenames *)
+                     * identifierId (* identifier *)
+                   )
+       (* | CNamed of int *)
+       (* | CModProj of int * string list * string *)
        | CApp of con * con
        | CAbs of string * kind * con
 
@@ -107,8 +114,12 @@ withtype pat = pat' located
 datatype exp' =
          EPrim of Prim.t
        | ERel of int
-       | ENamed of int
-       | EModProj of int * string list * string
+       | ENamed of ( moduleId (* modulename *)
+                     * moduleId list (* submodulenames *)
+                     * identifierId (* identifier *)
+                   )
+       (* | ENamed of int *)
+       (* | EModProj of int * string list * string *)
        | EApp of exp * exp
        | EAbs of string * con * con * exp
        | ECApp of exp * con
@@ -145,55 +156,55 @@ withtype exp = exp' located
 datatype import_mode = Import | Skip
 
 datatype sgn_item' =
-         SgiConAbs of string * int * kind
-       | SgiCon of string * int * kind * con
-       | SgiDatatype of (string * int * string list * (string * int * con option) list) list
-       | SgiDatatypeImp of string * int * int * string list * string * string list * (string * int * con option) list
-       | SgiVal of string * int * con
-       | SgiStr of import_mode * string * int * sgn
-       | SgiSgn of string * int * sgn
+         SgiConAbs of string * identifierId * kind
+       | SgiCon of string * identifierId * kind * con
+       | SgiDatatype of (string * identifierId * string list * (string * identifierId * con option) list) list
+       | SgiDatatypeImp of string * moduleId * moduleId * string list * string * string list * (string * identifierId * con option) list
+       | SgiVal of string * identifierId * con
+       | SgiStr of import_mode * string * moduleId * sgn
+       | SgiSgn of string * signatureId * sgn
        | SgiConstraint of con * con
        | SgiClassAbs of string * int * kind
        | SgiClass of string * int * kind * con
 
 and sgn' =
     SgnConst of sgn_item list
-  | SgnVar of int
-  | SgnFun of string * int * sgn * sgn
+  | SgnVar of signatureId
+  | SgnFun of string * moduleId * sgn * sgn
   | SgnWhere of sgn * string list * string * con
-  | SgnProj of int * string list * string
+  | SgnProj of moduleId * string list * string
   | SgnError
 
 withtype sgn_item = sgn_item' located
 and sgn = sgn' located
 
 datatype decl' =
-         DCon of string * int * kind * con
-       | DDatatype of (string * int * string list * (string * int * con option) list) list
-       | DDatatypeImp of string * int * int * string list * string * string list * (string * int * con option) list
-       | DVal of string * int * con * exp
-       | DValRec of (string * int * con * exp) list
-       | DSgn of string * int * sgn
-       | DStr of string * int * sgn * str
-       | DFfiStr of string * int * sgn
+         DCon of string * identifierId * kind * con
+       | DDatatype of (string * identifierId * moduleId list * (string * identifierId * con option) list) list
+       | DDatatypeImp of string * identifierId * moduleId * moduleId list * string * string list * (string * identifierId * con option) list
+       | DVal of string * identifierId * con * exp
+       | DValRec of (string * identifierId * con * exp) list
+       | DSgn of string * identifierId * sgn
+       | DStr of string * identifierId * sgn * str
+       | DFfiStr of string * identifierId * sgn
        | DConstraint of con * con
-       | DExport of int * sgn * str
-       | DTable of int * string * int * con * exp * con * exp * con
-       | DSequence of int * string * int
-       | DView of int * string * int * exp * con
+       | DExport of (* int * *) sgn * str
+       | DTable of moduleId (* basis *) * string * identifierId * con * exp * con * exp * con
+       | DSequence of moduleId (* basis *) * string * identifierId
+       | DView of moduleId (* basis *) * string * identifierId * exp * con
        | DDatabase of string
-       | DCookie of int * string * int * con
-       | DStyle of int * string * int
+       | DCookie of moduleId (* basis *) * string * identifierId * con
+       | DStyle of moduleId (* basis *) * string * identifierId
        | DTask of exp * exp
        | DPolicy of exp
-       | DOnError of int * string list * string
-       | DFfi of string * int * Source.ffi_mode list * con
+       | DOnError of identifierId * string list * string
+       | DFfi of string * identifierId * Source.ffi_mode list * con
 
      and str' =
          StrConst of decl list
-       | StrVar of int
+       | StrVar of moduleId
        | StrProj of str * string
-       | StrFun of string * int * sgn * sgn * str
+       | StrFun of string * moduleId * sgn * sgn * str
        | StrApp of str * str
        | StrError
 
