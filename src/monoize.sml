@@ -4326,6 +4326,27 @@ fun monoDecl (env, fm) (all as (d, loc)) =
                        (L'.DVal (x, n, t', e_name, s), loc)])
             end
           | L.DView _ => poly ()
+          | L.DIndex ((L.ENamed tab, _), (L.ERecord xms, _)) =>
+            let
+                val (_, _, _, path) = Env.lookupENamed env tab
+
+                val failed = ref false
+                val xms = List.mapPartial (fn (x, m, _) =>
+                                              case #1 x of
+                                                  L.CName x =>
+                                                  (case #1 m of
+                                                       L.ECApp ((L.EFfi ("Basis", "equality"), _), _) => SOME (x, L'.Equality)
+                                                     | L.EFfi ("Basis", "trigram") => SOME (x, L'.Trigram)
+                                                     | L.ECApp ((L.EFfi ("Basis", "skipped"), _), _) => SOME (x, L'.Skipped)
+                                                     | _ => (failed := true; NONE))
+                                                | _ => (failed := true; NONE)) xms
+            in
+                if !failed then
+                    poly ()
+                else
+                    SOME (env, fm, [(L'.DIndex (path, xms), loc)])
+            end
+          | L.DIndex _ => poly ()
           | L.DSequence (x, n, s) =>
             let
                 val t = (L.CFfi ("Basis", "string"), loc)

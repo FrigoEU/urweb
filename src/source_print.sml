@@ -525,7 +525,7 @@ and p_sgn (sgn, _) =
 					 space,
 					 p_con c]
       | SgnProj (m, ms, x) => p_list_sep (string ".") string (m :: ms @ [x])
-                                   
+
 
 
 fun p_decl ((d, _) : decl) =
@@ -642,6 +642,13 @@ fun p_decl ((d, _) : decl) =
                                       string "constraints",
                                       space,
                                       p_exp ce]
+      | DIndex (e1, e2, _) => box [string "ensure_index",
+                                   space,
+                                   p_exp e1,
+                                   space,
+                                   string ":",
+                                   space,
+                                   p_exp e2]
       | DSequence x => box [string "sequence",
                             space,
                             string x]
