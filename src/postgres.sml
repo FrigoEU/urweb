@@ -164,10 +164,10 @@ fun checkTablesAndViews tables views =
             String.concat
                 [
                   createtemptables,
-                  "INSERT INTO urweb_compiler_tablespecs VALUES",
+                  if List.length tables > 0 then "INSERT INTO urweb_compiler_tablespecs VALUES" else "",
                   String.concatWith "," (List.map (fn (n, xts) => createValues true n xts) tables),
                   ";",
-                  "INSERT INTO urweb_compiler_viewspecs VALUES",
+                  if List.length views > 0 then "INSERT INTO urweb_compiler_viewspecs VALUES" else "",
                   String.concatWith "," (List.map (fn (n, xts) => createValues false n xts) views),
                   ";",
                   checkRelationsQuery true,
